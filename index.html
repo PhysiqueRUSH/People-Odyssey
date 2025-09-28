@@ -603,6 +603,23 @@
     // Recherche dynamique
     searchInput.addEventListener("input", () => renderPatients(searchInput.value));
 
+    function normalizePhone(num) {
+  return (num || "").replace(/\s+/g, "");
+}
+
+function callPatient() {
+  const num = document.getElementById("info-phone").value.trim();
+  if (!num) { alert("Aucun numéro de téléphone renseigné."); return; }
+  window.location.href = "tel:" + normalizePhone(num);
+}
+
+function smsPatient() {
+  const num = document.getElementById("info-phone").value.trim();
+  if (!num) { alert("Aucun numéro de téléphone renseigné."); return; }
+  // Schéma SMS générique (Android/iOS)
+  window.location.href = "sms:" + normalizePhone(num);
+}
+
     // Init
     showToday();
     renderPatients();
