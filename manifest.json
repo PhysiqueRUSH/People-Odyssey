@@ -1,0 +1,21 @@
+{
+  "name": "People Odyssey",
+  "short_name": "People",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#0b1d3a",
+  "theme_color": "#0b1d3a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "PeopleICO.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "PeopleICO.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
