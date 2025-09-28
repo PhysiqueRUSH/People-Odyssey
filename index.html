@@ -27,10 +27,16 @@
     .container { padding: 1rem; }
     .search-bar { display: flex; margin-bottom: .5rem; }
     .search-bar input { flex: 1; padding: .6rem; border:none; border-radius:6px; }
-    .search-bar button { display:none; } /* On garde la loupe cachée car plus besoin */
     .actions { display:flex; justify-content:space-between; margin-bottom:1rem; }
-    .actions button { background:#1f3f7a; border:none; padding:.5rem 1rem; border-radius:6px; color:white; cursor:pointer; }
-    .patient-list { list-style:none; padding:0; }
+    .actions button, .bottom-actions button { 
+      background:#1f3f7a; 
+      border:none; 
+      padding:.5rem 1rem; 
+      border-radius:6px; 
+      color:white; 
+      cursor:pointer; 
+    }
+    .patient-list { list-style:none; padding:0; margin-bottom: 3rem; }
     .patient-list li { 
       background:#16305a; 
       margin-bottom:.5rem; 
@@ -38,8 +44,9 @@
       border-radius:6px; 
       display:flex; 
       align-items:center; 
+      cursor:pointer;
     }
-    #add-screen { display:none; padding:1rem; }
+    #add-screen, #calendar-screen { display:none; padding:1rem; }
     #add-screen input { width:100%; margin-bottom:.8rem; padding:.6rem; border:none; border-radius:6px; }
     .save-btn { background:#28a745; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; margin-right:.5rem; }
     .back-btn { background:#6c757d; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; }
@@ -50,6 +57,62 @@
       font-size: 1.2rem;
       cursor: pointer;
       margin-right: 8px;
+    }
+    .bottom-actions {
+      position: fixed;
+      bottom: 10px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      padding: 0 1rem;
+    }
+    /* Menu patient */
+    #patient-menu {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      justify-content: center;
+      align-items: center;
+    }
+    #patient-menu .menu-box {
+      background: #112b55;
+      border-radius: 8px;
+      padding: 1rem;
+      width: 80%;
+      max-width: 400px;
+    }
+    #patient-menu button {
+      display: block;
+      width: 100%;
+      margin: .4rem 0;
+      background: #1f3f7a;
+      border: none;
+      padding: .6rem;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      text-align: left;
+    }
+    /* Calendrier */
+    .calendar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: .5rem;
+    }
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+    .calendar-day {
+      background: #16305a;
+      border-radius: 4px;
+      text-align: center;
+      padding: .6rem;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -68,6 +131,11 @@
     </div>
 
     <ul class="patient-list" id="patientList"></ul>
+
+    <div class="bottom-actions">
+      <button onclick="showCalendar()">Calendrier</button>
+      <button>À facturer</button>
+    </div>
   </div>
 
   <!-- Écran ajout patient -->
@@ -78,9 +146,38 @@
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
 
+  <!-- Écran calendrier -->
+  <div id="calendar-screen" class="container">
+    <div class="calendar-header">
+      <button onclick="prevMonth()">◀</button>
+      <span id="calendar-title"></span>
+      <button onclick="nextMonth()">▶</button>
+    </div>
+    <div class="calendar-grid" id="calendar-grid"></div>
+    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  </div>
+
+  <!-- Menu patient -->
+  <div id="patient-menu">
+    <div class="menu-box">
+      <button>Informations</button>
+      <button>Présent ce jour</button>
+      <button>Présent demain</button>
+      <button>Présent après-demain</button>
+      <button>Présent le ...</button>
+      <button>Liste séances facturées</button>
+      <button>Liste séances non facturées</button>
+      <button>Liste de toutes les séances</button>
+      <button>Date de la dernière facturation</button>
+    </div>
+  </div>
+
   <script>
     const patientListEl = document.getElementById("patientList");
     const searchInput = document.getElementById("searchInput");
+    const patientMenu = document.getElementById("patient-menu");
+
+    let currentYear, currentMonth;
 
     function renderPatients(filter = "") {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
@@ -94,13 +191,18 @@
           const deleteBtn = document.createElement("button");
           deleteBtn.innerHTML = "🗑️";
           deleteBtn.className = "delete-btn";
-          deleteBtn.onclick = () => deletePatient(index);
+          deleteBtn.onclick = (e) => {
+            e.stopPropagation();
+            deletePatient(index);
+          };
 
           const span = document.createElement("span");
           span.textContent = p.nom + " " + p.prenom;
 
           li.appendChild(deleteBtn);
           li.appendChild(span);
+          li.onclick = () => showPatientMenu(p);
+
           patientListEl.appendChild(li);
         });
     }
@@ -135,12 +237,74 @@
     function showMainScreen() {
       document.getElementById("main-screen").style.display = "block";
       document.getElementById("add-screen").style.display = "none";
+      document.getElementById("calendar-screen").style.display = "none";
+      patientMenu.style.display = "none";
+    }
+    function showCalendar() {
+      document.getElementById("main-screen").style.display = "none";
+      document.getElementById("calendar-screen").style.display = "block";
+      renderCalendar();
     }
 
-    // 🔥 Ajout : écouteur pour la recherche en temps réel
+    // 🔥 Recherche dynamique
     searchInput.addEventListener("input", () => {
       renderPatients(searchInput.value);
     });
+
+    // Menu patient
+    function showPatientMenu(patient) {
+      patientMenu.style.display = "flex";
+    }
+    patientMenu.addEventListener("click", (e) => {
+      if (e.target === patientMenu) {
+        patientMenu.style.display = "none";
+      } else if (e.target.tagName === "BUTTON") {
+        alert("Option choisie : " + e.target.textContent);
+        patientMenu.style.display = "none";
+      }
+    });
+
+    // Calendrier
+    function renderCalendar() {
+      const titleEl = document.getElementById("calendar-title");
+      const gridEl = document.getElementById("calendar-grid");
+
+      const today = new Date();
+      if (currentYear === undefined) {
+        currentYear = today.getFullYear();
+        currentMonth = today.getMonth();
+      }
+
+      const firstDay = new Date(currentYear, currentMonth, 1);
+      const lastDay = new Date(currentYear, currentMonth + 1, 0);
+      const monthName = firstDay.toLocaleString("fr-FR", { month: "long" });
+
+      titleEl.textContent = monthName + " " + currentYear;
+      gridEl.innerHTML = "";
+
+      const startDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1; // Lundi=0
+      for (let i = 0; i < startDay; i++) {
+        gridEl.appendChild(document.createElement("div"));
+      }
+
+      for (let d = 1; d <= lastDay.getDate(); d++) {
+        const dayEl = document.createElement("div");
+        dayEl.className = "calendar-day";
+        dayEl.textContent = d;
+        dayEl.onclick = () => alert("Jour sélectionné : " + d + "/" + (currentMonth+1) + "/" + currentYear);
+        gridEl.appendChild(dayEl);
+      }
+    }
+    function prevMonth() {
+      currentMonth--;
+      if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+      renderCalendar();
+    }
+    function nextMonth() {
+      currentMonth++;
+      if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+      renderCalendar();
+    }
 
     // Initialisation
     renderPatients();
