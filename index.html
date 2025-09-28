@@ -139,6 +139,28 @@
     .calendar-day.green { background: green; }
     .calendar-day.blue { background: skyblue; }
     .calendar-day.selected { background: deepskyblue; color: white; font-weight: bold; }
+    .phone-row {
+  display: flex;
+  gap: .4rem;
+  align-items: center;
+}
+.phone-row input { flex: 1; }
+
+/* Boutons icône téléphone / SMS */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: .6rem;
+  border: none;
+  border-radius: 6px;
+  background: #1f3f7a;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+.icon-btn:active { transform: scale(0.98); }
   </style>
 </head>
 <body>
@@ -189,7 +211,11 @@
   <!-- Écran informations patient -->
   <div id="info-screen" class="container">
     <h3 id="info-title"></h3>
-    <input type="tel" id="info-phone" placeholder="Numéro de téléphone">
+  <div class="phone-row">
+  <input type="tel" id="info-phone" placeholder="Numéro de téléphone">
+  <button class="icon-btn" title="Appeler" onclick="callPatient()">📞</button>
+  <button class="icon-btn" title="SMS" onclick="smsPatient()">💬</button>
+</div>
     <input type="text" id="info-rejet" placeholder="Rejet de paiement">
     <textarea id="info-notes" rows="4" placeholder="Autres notes..."></textarea>
     <button class="save-btn" onclick="saveInfo()">💾 Enregistrer</button>
