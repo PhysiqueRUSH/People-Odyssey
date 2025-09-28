@@ -52,8 +52,14 @@
       align-items:center; 
       cursor:pointer;
     }
-    #add-screen, #calendar-screen { display:none; padding:1rem; }
-    #add-screen input { width:100%; margin-bottom:.8rem; padding:.6rem; border:none; border-radius:6px; }
+    #add-screen, #calendar-screen, #info-screen { display:none; padding:1rem; }
+    #add-screen input, #info-screen input, #info-screen textarea { 
+      width:100%; 
+      margin-bottom:.8rem; 
+      padding:.6rem; 
+      border:none; 
+      border-radius:6px; 
+    }
     .save-btn { background:#28a745; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; margin-right:.5rem; }
     .back-btn { background:#6c757d; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; }
     .delete-btn {
@@ -128,6 +134,25 @@
       padding: .6rem;
       cursor: pointer;
     }
+    /* Écran infos */
+    .info-actions {
+      display: flex;
+      align-items: center;
+      margin-bottom: .8rem;
+    }
+    .info-actions input {
+      flex: 1;
+      margin-right: .5rem;
+    }
+    .icon-btn {
+      background: #1f3f7a;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      padding: .5rem;
+      margin-left: 4px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -175,10 +200,24 @@
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
 
+  <!-- Écran informations patient -->
+  <div id="info-screen" class="container">
+    <h3 id="info-title"></h3>
+    <div class="info-actions">
+      <input type="tel" id="info-phone" placeholder="Numéro de téléphone">
+      <button class="icon-btn" id="callBtn">📞</button>
+      <button class="icon-btn" id="smsBtn">💬</button>
+    </div>
+    <input type="text" id="info-rejet" placeholder="Rejet de paiement">
+    <textarea id="info-notes" rows="4" placeholder="Autres notes..."></textarea>
+    <button class="save-btn" onclick="saveInfo()">💾 Enregistrer</button>
+    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  </div>
+
   <!-- Menu patient -->
   <div id="patient-menu">
     <div class="menu-box">
-      <button>Informations</button>
+      <button onclick="showInfoScreen()">Informations</button>
       <button>Présent ce jour</button>
       <button>Présent demain</button>
       <button>Présent après-demain</button>
@@ -197,6 +236,7 @@
     const todayDateEl = document.getElementById("todayDate");
 
     let currentYear, currentMonth;
+    let selectedPatientIndex = null;
 
     // Afficher date du jour
     function showToday() {
@@ -224,10 +264,13 @@
 
           const span = document.createElement("span");
           span.textContent = p.nom + " " + p.prenom;
+          if (p.rejet && p.rejet.trim() !== "") {
+            span.textContent += " ⚠️";
+          }
 
           li.appendChild(deleteBtn);
           li.appendChild(span);
-          li.onclick = () => showPatientMenu(p);
+          li.onclick = () => showPatientMenu(index);
 
           patientListEl.appendChild(li);
         });
@@ -241,7 +284,7 @@
         return; 
       }
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      patients.push({nom, prenom});
+      patients.push({nom, prenom, phone:"", rejet:"", notes:""});
       localStorage.setItem("patients", JSON.stringify(patients));
       document.getElementById("nom").value = "";
       document.getElementById("prenom").value = "";
@@ -264,7 +307,9 @@
       document.getElementById("main-screen").style.display = "block";
       document.getElementById("add-screen").style.display = "none";
       document.getElementById("calendar-screen").style.display = "none";
+      document.getElementById("info-screen").style.display = "none";
       patientMenu.style.display = "none";
+      renderPatients(searchInput.value);
     }
     function showCalendar() {
       document.getElementById("main-screen").style.display = "none";
@@ -278,17 +323,46 @@
     });
 
     // Menu patient
-    function showPatientMenu(patient) {
+    function showPatientMenu(index) {
+      selectedPatientIndex = index;
       patientMenu.style.display = "flex";
     }
     patientMenu.addEventListener("click", (e) => {
       if (e.target === patientMenu) {
         patientMenu.style.display = "none";
-      } else if (e.target.tagName === "BUTTON") {
-        alert("Option choisie : " + e.target.textContent);
-        patientMenu.style.display = "none";
       }
     });
+
+    // Écran infos patient
+    function showInfoScreen() {
+      patientMenu.style.display = "none";
+      document.getElementById("main-screen").style.display = "none";
+      document.getElementById("info-screen").style.display = "block";
+
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      const p = patients[selectedPatientIndex];
+      document.getElementById("info-title").textContent = p.nom + " " + p.prenom;
+      document.getElementById("info-phone").value = p.phone || "";
+      document.getElementById("info-rejet").value = p.rejet || "";
+      document.getElementById("info-notes").value = p.notes || "";
+
+      document.getElementById("callBtn").onclick = () => {
+        if (p.phone) window.location.href = "tel:" + p.phone;
+      };
+      document.getElementById("smsBtn").onclick = () => {
+        if (p.phone) window.location.href = "sms:" + p.phone;
+      };
+    }
+
+    function saveInfo() {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      if (selectedPatientIndex === null) return;
+      patients[selectedPatientIndex].phone = document.getElementById("info-phone").value.trim();
+      patients[selectedPatientIndex].rejet = document.getElementById("info-rejet").value.trim();
+      patients[selectedPatientIndex].notes = document.getElementById("info-notes").value.trim();
+      localStorage.setItem("patients", JSON.stringify(patients));
+      showMainScreen();
+    }
 
     // Calendrier
     function renderCalendar() {
