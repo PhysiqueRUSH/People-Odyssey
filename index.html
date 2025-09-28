@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>People Odyssey</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b1d3a">
   <link rel="icon" type="image/png" href="PeopleICO.png">
   <style>
     body {
@@ -177,5 +179,15 @@
     // Initial load
     loadPatients();
   </script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("service-worker.js")
+        .then(reg => console.log("✅ Service Worker enregistré :", reg.scope))
+        .catch(err => console.error("❌ Erreur Service Worker :", err));
+    });
+  }
+</script>
+  
 </body>
 </html>
