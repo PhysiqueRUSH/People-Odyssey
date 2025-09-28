@@ -6,7 +6,7 @@
   <title>People Odyssey</title>
   <link rel="icon" type="image/png" href="PeopleICO.png">
 
-  <!-- Ajout PWA -->
+  <!-- PWA -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0b1d3a">
 
@@ -17,19 +17,40 @@
       background-color: #0b1d3a;
       color: white;
     }
-    header { padding: 1rem; text-align: center; background:#112b55; }
+    header { 
+      padding: 1rem; 
+      text-align: center; 
+      background:#112b55; 
+      font-size: 1.3rem;
+      font-weight: bold;
+    }
     .container { padding: 1rem; }
     .search-bar { display: flex; margin-bottom: .5rem; }
-    .search-bar input { flex: 1; padding: .6rem; border:none; border-radius:6px 0 0 6px; }
-    .search-bar button { background:#1f3f7a; border:none; padding:.6rem; border-radius:0 6px 6px 0; color:white; cursor:pointer; }
+    .search-bar input { flex: 1; padding: .6rem; border:none; border-radius:6px; }
+    .search-bar button { display:none; } /* On garde la loupe cachée car plus besoin */
     .actions { display:flex; justify-content:space-between; margin-bottom:1rem; }
     .actions button { background:#1f3f7a; border:none; padding:.5rem 1rem; border-radius:6px; color:white; cursor:pointer; }
     .patient-list { list-style:none; padding:0; }
-    .patient-list li { background:#16305a; margin-bottom:.5rem; padding:.8rem; border-radius:6px; }
+    .patient-list li { 
+      background:#16305a; 
+      margin-bottom:.5rem; 
+      padding:.6rem; 
+      border-radius:6px; 
+      display:flex; 
+      align-items:center; 
+    }
     #add-screen { display:none; padding:1rem; }
     #add-screen input { width:100%; margin-bottom:.8rem; padding:.6rem; border:none; border-radius:6px; }
     .save-btn { background:#28a745; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; margin-right:.5rem; }
     .back-btn { background:#6c757d; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; }
+    .delete-btn {
+      background: none;
+      border: none;
+      color: #ff6b6b;
+      font-size: 1.2rem;
+      cursor: pointer;
+      margin-right: 8px;
+    }
   </style>
 </head>
 <body>
@@ -39,7 +60,6 @@
   <div id="main-screen" class="container">
     <div class="search-bar">
       <input type="text" id="searchInput" placeholder="Rechercher un patient...">
-      <button onclick="searchPatient()">🔍</button>
     </div>
 
     <div class="actions">
@@ -62,39 +82,50 @@
     const patientListEl = document.getElementById("patientList");
     const searchInput = document.getElementById("searchInput");
 
-    function loadPatients() {
+    function renderPatients(filter = "") {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
       patientListEl.innerHTML = "";
-      patients.forEach(p => {
-        const li = document.createElement("li");
-        li.textContent = p.nom + " " + p.prenom;
-        patientListEl.appendChild(li);
-      });
+
+      patients
+        .filter(p => (p.nom + " " + p.prenom).toLowerCase().includes(filter.toLowerCase()))
+        .forEach((p, index) => {
+          const li = document.createElement("li");
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.innerHTML = "🗑️";
+          deleteBtn.className = "delete-btn";
+          deleteBtn.onclick = () => deletePatient(index);
+
+          const span = document.createElement("span");
+          span.textContent = p.nom + " " + p.prenom;
+
+          li.appendChild(deleteBtn);
+          li.appendChild(span);
+          patientListEl.appendChild(li);
+        });
     }
 
     function savePatient() {
       const nom = document.getElementById("nom").value.trim();
       const prenom = document.getElementById("prenom").value.trim();
-      if (!nom || !prenom) { alert("Veuillez remplir Nom et Prénom"); return; }
+      if (!nom || !prenom) { 
+        alert("Veuillez remplir Nom et Prénom"); 
+        return; 
+      }
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
       patients.push({nom, prenom});
       localStorage.setItem("patients", JSON.stringify(patients));
       document.getElementById("nom").value = "";
       document.getElementById("prenom").value = "";
       showMainScreen();
-      loadPatients();
+      renderPatients(searchInput.value);
     }
 
-    function searchPatient() {
-      const term = searchInput.value.toLowerCase();
+    function deletePatient(index) {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      patientListEl.innerHTML = "";
-      patients.filter(p => (p.nom + " " + p.prenom).toLowerCase().includes(term))
-        .forEach(p => {
-          const li = document.createElement("li");
-          li.textContent = p.nom + " " + p.prenom;
-          patientListEl.appendChild(li);
-        });
+      patients.splice(index, 1);
+      localStorage.setItem("patients", JSON.stringify(patients));
+      renderPatients(searchInput.value);
     }
 
     function showAddScreen() {
@@ -105,7 +136,14 @@
       document.getElementById("main-screen").style.display = "block";
       document.getElementById("add-screen").style.display = "none";
     }
-    loadPatients();
+
+    // 🔥 Ajout : écouteur pour la recherche en temps réel
+    searchInput.addEventListener("input", () => {
+      renderPatients(searchInput.value);
+    });
+
+    // Initialisation
+    renderPatients();
   </script>
 
   <!-- Enregistrement Service Worker -->
