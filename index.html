@@ -134,9 +134,10 @@
       padding: .6rem;
       cursor: pointer;
     }
-    .calendar-day.selected {
-      background: #28a745;
-    }
+    .calendar-day.red { background: red; }
+    .calendar-day.orange { background: orange; }
+    .calendar-day.green { background: green; }
+    .calendar-day.blue { background: skyblue; }
   </style>
 </head>
 <body>
@@ -265,6 +266,16 @@
       todayDateEl.textContent = today.toLocaleDateString("fr-FR", options);
     }
 
+    // Compter les présences pour une date
+    function countPresences(dateStr) {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      let count = 0;
+      patients.forEach(p => {
+        if (p.presences && p.presences.includes(dateStr)) count++;
+      });
+      return count;
+    }
+
     // Afficher patients
     function renderPatients(filter = "") {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
@@ -368,7 +379,7 @@
     function showDayScreen(dateStr) {
       hideAll();
       document.getElementById("day-screen").style.display = "block";
-      document.getElementById("day-title").textContent = "Présents le " + dateStr;
+      updateDayTitle(dateStr);
       currentDayView = dateStr;
       renderDayPatients(dateStr);
     }
@@ -447,9 +458,17 @@
       for (let d = 1; d <= lastDay.getDate(); d++) {
         const date = new Date(currentYear, currentMonth, d);
         const dateStr = formatDate(date);
+        const count = countPresences(dateStr);
+
         const dayEl = document.createElement("div");
         dayEl.className = "calendar-day";
         dayEl.textContent = d;
+
+        if (count > 40) dayEl.classList.add("red");
+        else if (count >= 35) dayEl.classList.add("orange");
+        else if (count >= 5) dayEl.classList.add("green");
+        else if (count >= 1) dayEl.classList.add("blue");
+
         dayEl.onclick = () => showDayScreen(dateStr);
         gridEl.appendChild(dayEl);
       }
@@ -503,6 +522,11 @@
     }
 
     // Liste des patients d'une journée
+    function updateDayTitle(dateStr) {
+      const total = countPresences(dateStr);
+      document.getElementById("day-title").textContent = "Présents le " + dateStr + " — " + total + " patient(s)";
+    }
+
     function renderDayPatients(dateStr) {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
       dayPatientList.innerHTML="";
@@ -517,6 +541,7 @@
             patients[idx]=p;
             localStorage.setItem("patients", JSON.stringify(patients));
             renderDayPatients(dateStr);
+            updateDayTitle(dateStr);
           };
           li.appendChild(delBtn);
           const span=document.createElement("span");
