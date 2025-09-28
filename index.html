@@ -138,6 +138,7 @@
     .calendar-day.orange { background: orange; }
     .calendar-day.green { background: green; }
     .calendar-day.blue { background: skyblue; }
+    .calendar-day.selected { background: deepskyblue; color: white; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -257,6 +258,19 @@
 
     function formatDate(date) {
       return date.toLocaleDateString("fr-FR");
+    }
+
+    // Normaliser une date entrée par l'utilisateur (jj/mm/aa → jj/mm/aaaa)
+    function normalizeDate(input) {
+      const parts = input.split("/");
+      if (parts.length === 3) {
+        let [jj, mm, aa] = parts;
+        if (aa.length === 2) {
+          aa = "20" + aa;
+        }
+        return `${jj.padStart(2,"0")}/${mm.padStart(2,"0")}/${aa}`;
+      }
+      return input;
     }
 
     // Date du jour
@@ -423,8 +437,9 @@
       patientMenu.style.display="none";
     }
     function savePresenceByDate() {
-      const dateStr = document.getElementById("presence-date").value.trim();
+      let dateStr = document.getElementById("presence-date").value.trim();
       if (!dateStr) return;
+      dateStr = normalizeDate(dateStr);
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
       const p = patients[selectedPatientIndex];
       if (!p.presences.includes(dateStr)) p.presences.push(dateStr);
@@ -476,7 +491,7 @@
     function prevMonth() { currentMonth--; if (currentMonth<0){currentMonth=11;currentYear--;} renderCalendar(); }
     function nextMonth() { currentMonth++; if (currentMonth>11){currentMonth=0;currentYear++;} renderCalendar(); }
 
-    // Calendrier présences
+    // Calendrier présences (sélection multi)
     function renderPresenceCalendar() {
       const titleEl = document.getElementById("presence-title");
       const gridEl = document.getElementById("presence-grid");
@@ -499,7 +514,13 @@
         const dayEl = document.createElement("div");
         dayEl.className = "calendar-day";
         dayEl.textContent = d;
-        if (presenceSelection.has(dateStr)) dayEl.classList.add("selected");
+
+        // Affiche en bleu ciel si déjà sélectionné
+        if (presenceSelection.has(dateStr)) {
+          dayEl.classList.add("selected");
+        }
+
+        // Clic = toggle sélection
         dayEl.onclick = () => {
           if (presenceSelection.has(dateStr)) {
             presenceSelection.delete(dateStr);
@@ -509,6 +530,7 @@
             dayEl.classList.add("selected");
           }
         };
+
         gridEl.appendChild(dayEl);
       }
     }
