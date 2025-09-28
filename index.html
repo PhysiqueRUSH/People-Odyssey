@@ -25,6 +25,12 @@
       font-weight: bold;
     }
     .container { padding: 1rem; }
+    .today-date {
+      font-size: 0.8rem;
+      color: #ccc;
+      margin-bottom: 0.3rem;
+      text-align: left;
+    }
     .search-bar { display: flex; margin-bottom: .5rem; }
     .search-bar input { flex: 1; padding: .6rem; border:none; border-radius:6px; }
     .actions { display:flex; justify-content:space-between; margin-bottom:1rem; }
@@ -102,6 +108,14 @@
       align-items: center;
       margin-bottom: .5rem;
     }
+    .calendar-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      text-align: center;
+      margin-bottom: 4px;
+      font-size: 0.9rem;
+      color: #ccc;
+    }
     .calendar-grid {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
@@ -121,6 +135,7 @@
 
   <!-- Écran principal -->
   <div id="main-screen" class="container">
+    <div class="today-date" id="todayDate"></div>
     <div class="search-bar">
       <input type="text" id="searchInput" placeholder="Rechercher un patient...">
     </div>
@@ -153,6 +168,9 @@
       <span id="calendar-title"></span>
       <button onclick="nextMonth()">▶</button>
     </div>
+    <div class="calendar-weekdays">
+      <div>Lun</div><div>Mar</div><div>Mer</div><div>Jeu</div><div>Ven</div><div>Sam</div><div>Dim</div>
+    </div>
     <div class="calendar-grid" id="calendar-grid"></div>
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
@@ -176,8 +194,16 @@
     const patientListEl = document.getElementById("patientList");
     const searchInput = document.getElementById("searchInput");
     const patientMenu = document.getElementById("patient-menu");
+    const todayDateEl = document.getElementById("todayDate");
 
     let currentYear, currentMonth;
+
+    // Afficher date du jour
+    function showToday() {
+      const today = new Date();
+      const options = { weekday: "long", year: "numeric", month: "long", day: "numeric" };
+      todayDateEl.textContent = today.toLocaleDateString("fr-FR", options);
+    }
 
     function renderPatients(filter = "") {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
@@ -307,6 +333,7 @@
     }
 
     // Initialisation
+    showToday();
     renderPatients();
   </script>
 
