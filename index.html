@@ -4,97 +4,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>People Odyssey</title>
+  <link rel="icon" type="image/png" href="PeopleICO.png">
+
+  <!-- Ajout PWA -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0b1d3a">
-  <link rel="icon" type="image/png" href="PeopleICO.png">
+
   <style>
     body {
       font-family: Arial, sans-serif;
       margin: 0;
-      background-color: #0b1d3a; /* bleu marine */
+      background-color: #0b1d3a;
       color: white;
     }
-    header {
-      padding: 1rem;
-      text-align: center;
-      font-size: 1.3rem;
-      font-weight: bold;
-      background-color: #112b55;
-    }
-    .container {
-      padding: 1rem;
-    }
-    .search-bar {
-      display: flex;
-      margin-bottom: 0.5rem;
-    }
-    .search-bar input {
-      flex: 1;
-      padding: 0.6rem;
-      border: none;
-      border-radius: 6px 0 0 6px;
-    }
-    .search-bar button {
-      background: #1f3f7a;
-      border: none;
-      padding: 0.6rem;
-      border-radius: 0 6px 6px 0;
-      color: white;
-      cursor: pointer;
-    }
-    .actions {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 1rem;
-    }
-    .actions button {
-      background: #1f3f7a;
-      border: none;
-      padding: 0.5rem 1rem;
-      border-radius: 6px;
-      color: white;
-      cursor: pointer;
-    }
-    .patient-list {
-      list-style: none;
-      padding: 0;
-    }
-    .patient-list li {
-      background: #16305a;
-      margin-bottom: 0.5rem;
-      padding: 0.8rem;
-      border-radius: 6px;
-    }
-    /* Écran d’ajout */
-    #add-screen {
-      display: none;
-      padding: 1rem;
-    }
-    #add-screen input {
-      display: block;
-      width: 100%;
-      margin-bottom: 0.8rem;
-      padding: 0.6rem;
-      border: none;
-      border-radius: 6px;
-    }
-    .save-btn {
-      background: #28a745;
-      border: none;
-      padding: 0.6rem 1.2rem;
-      border-radius: 6px;
-      color: white;
-      cursor: pointer;
-      margin-right: 0.5rem;
-    }
-    .back-btn {
-      background: #6c757d;
-      border: none;
-      padding: 0.6rem 1.2rem;
-      border-radius: 6px;
-      color: white;
-      cursor: pointer;
-    }
+    header { padding: 1rem; text-align: center; background:#112b55; }
+    .container { padding: 1rem; }
+    .search-bar { display: flex; margin-bottom: .5rem; }
+    .search-bar input { flex: 1; padding: .6rem; border:none; border-radius:6px 0 0 6px; }
+    .search-bar button { background:#1f3f7a; border:none; padding:.6rem; border-radius:0 6px 6px 0; color:white; cursor:pointer; }
+    .actions { display:flex; justify-content:space-between; margin-bottom:1rem; }
+    .actions button { background:#1f3f7a; border:none; padding:.5rem 1rem; border-radius:6px; color:white; cursor:pointer; }
+    .patient-list { list-style:none; padding:0; }
+    .patient-list li { background:#16305a; margin-bottom:.5rem; padding:.8rem; border-radius:6px; }
+    #add-screen { display:none; padding:1rem; }
+    #add-screen input { width:100%; margin-bottom:.8rem; padding:.6rem; border:none; border-radius:6px; }
+    .save-btn { background:#28a745; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; margin-right:.5rem; }
+    .back-btn { background:#6c757d; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -140,10 +75,7 @@
     function savePatient() {
       const nom = document.getElementById("nom").value.trim();
       const prenom = document.getElementById("prenom").value.trim();
-      if (!nom || !prenom) {
-        alert("Veuillez remplir Nom et Prénom");
-        return;
-      }
+      if (!nom || !prenom) { alert("Veuillez remplir Nom et Prénom"); return; }
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
       patients.push({nom, prenom});
       localStorage.setItem("patients", JSON.stringify(patients));
@@ -157,8 +89,7 @@
       const term = searchInput.value.toLowerCase();
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
       patientListEl.innerHTML = "";
-      patients
-        .filter(p => (p.nom + " " + p.prenom).toLowerCase().includes(term))
+      patients.filter(p => (p.nom + " " + p.prenom).toLowerCase().includes(term))
         .forEach(p => {
           const li = document.createElement("li");
           li.textContent = p.nom + " " + p.prenom;
@@ -170,24 +101,22 @@
       document.getElementById("main-screen").style.display = "none";
       document.getElementById("add-screen").style.display = "block";
     }
-
     function showMainScreen() {
       document.getElementById("main-screen").style.display = "block";
       document.getElementById("add-screen").style.display = "none";
     }
-
-    // Initial load
     loadPatients();
   </script>
-<script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("service-worker.js")
-        .then(reg => console.log("✅ Service Worker enregistré :", reg.scope))
-        .catch(err => console.error("❌ Erreur Service Worker :", err));
-    });
-  }
-</script>
-  
+
+  <!-- Enregistrement Service Worker -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("service-worker.js")
+          .then(reg => console.log("✅ Service Worker enregistré :", reg.scope))
+          .catch(err => console.error("❌ Erreur Service Worker :", err));
+      });
+    }
+  </script>
 </body>
 </html>
