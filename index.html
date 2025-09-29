@@ -10,8 +10,8 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0b1d3a">
 
-  <!-- Librairie OCR -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <!-- Tesseract.js -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
   <style>
     body {
@@ -36,7 +36,7 @@
     }
     .search-bar { display: flex; margin-bottom: .5rem; }
     .search-bar input { flex: 1; padding: .6rem; border:none; border-radius:6px; }
-    .actions { display:flex; justify-content:space-between; margin-bottom:1rem; gap:.5rem; }
+    .actions { display:flex; justify-content:space-between; margin-bottom:1rem; }
     .actions button, .bottom-actions button { 
       background:#1f3f7a; 
       border:none; 
@@ -55,12 +55,12 @@
       align-items:center; 
       cursor:pointer;
     }
-    #add-screen, #calendar-screen, #info-screen, #presence-screen,
-    #presence-date-screen, #day-screen, #facture-screen, #ocr-import-screen {
-      display:none; padding:1rem;
+    #add-screen, #calendar-screen, #info-screen, #presence-screen, 
+    #presence-date-screen, #day-screen, #facture-screen, #ocr-import-screen { 
+      display:none; padding:1rem; 
     }
-    #add-screen input, #info-screen input, #info-screen textarea,
-    #presence-date-screen input, #facturation-date-screen input {
+    #add-screen input, #info-screen input, #info-screen textarea, 
+    #presence-date-screen input, #facturation-date-screen input { 
       width:100%; 
       margin-bottom:.8rem; 
       padding:.6rem; 
@@ -142,21 +142,20 @@
       cursor: pointer;
       position: relative;
     }
-    .calendar-day.red { background: red; }
-    .calendar-day.orange { background: orange; }
-    .calendar-day.green { background: green; }
-    .calendar-day.blue { background: skyblue; }
     .calendar-day.selected { background: deepskyblue; color: white; font-weight: bold; }
     .pastille {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      position: absolute;
-      bottom: 2px;
-      right: 2px;
+      width:10px;
+      height:10px;
+      border-radius:50%;
+      position:absolute;
+      bottom:4px;
+      right:4px;
     }
-
-    .phone-row { display: flex; gap: .4rem; align-items: center; }
+    .phone-row {
+      display: flex;
+      gap: .4rem;
+      align-items: center;
+    }
     .phone-row input { flex: 1; }
     .icon-btn {
       display: inline-flex;
@@ -176,7 +175,8 @@
 </head>
 <body>
   <header>People Odyssey</header>
-    <!-- Écran principal -->
+
+  <!-- Écran principal -->
   <div id="main-screen" class="container">
     <div class="today-date" id="todayDate"></div>
     <div class="search-bar">
@@ -185,8 +185,7 @@
 
     <div class="actions">
       <button onclick="showAddScreen()">+</button>
-      <button>Liste spéciale</button>
-      <button onclick="showOcrImport()">Captures Doctolib</button>
+      <button onclick="showOcrScreen()">Captures Doctolib</button>
     </div>
 
     <ul class="patient-list" id="patientList"></ul>
@@ -217,6 +216,29 @@
     </div>
     <div class="calendar-grid" id="calendar-grid"></div>
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  </div>
+
+  <!-- Écran "À facturer" -->
+  <div id="facture-screen" class="container">
+    <h3>Patients avec séances non facturées</h3>
+    <ul id="facture-list"></ul>
+    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  </div>
+
+  <!-- Écran OCR import -->
+  <div id="ocr-import-screen" class="container">
+    <h3>Importer depuis Doctolib</h3>
+    <input type="file" id="ocr-file-1" accept="image/*"><br>
+    <input type="file" id="ocr-file-2" accept="image/*"><br>
+    <input type="file" id="ocr-file-3" accept="image/*"><br>
+    <input type="file" id="ocr-file-4" accept="image/*"><br>
+    <input type="file" id="ocr-file-5" accept="image/*"><br>
+    <input type="text" id="ocr-presence-date" placeholder="jj/mm/aaaa (vide = aujourd'hui)">
+    <button class="save-btn" id="ocr-process-btn">🔍 Extraire</button>
+    <button class="back-btn" onclick="hideOcrScreen()">↩ Retour</button>
+    <div id="ocr-results"></div>
+    <button class="save-btn" id="ocr-import-confirm" style="display:none;">✅ Importer</button>
+    <button class="back-btn" onclick="hideOcrScreen()">✖ Annuler</button>
   </div>
     <!-- Écran informations patient -->
   <div id="info-screen" class="container">
@@ -255,38 +277,20 @@
     <button class="save-btn" onclick="savePresenceByDate()">💾 Enregistrer</button>
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
-    <!-- Écran patients d'une journée -->
+
+  <!-- Écran patients d'une journée -->
   <div id="day-screen" class="container">
     <h3 id="day-title"></h3>
     <ul id="day-patient-list"></ul>
     <button class="back-btn" onclick="showCalendar()">↩ Retour</button>
   </div>
 
-  <!-- Écran "À facturer" -->
-  <div id="facture-screen" class="container">
-    <h3>Patients avec séances non facturées</h3>
-    <ul id="facture-list"></ul>
-    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
-  </div>
-
-  <!-- Écran saisie date dernière facturation -->
+  <!-- Écran date de la dernière facturation -->
   <div id="facturation-date-screen" class="container">
     <h3>Date de dernière facturation</h3>
-    <input type="text" id="facturation-date" placeholder="jj/mm/aa">
-    <button class="save-btn" onclick="saveFacturationDate()">💾 Enregistrer</button>
+    <input type="text" id="last-facture-date" placeholder="jj/mm/aa">
+    <button class="save-btn" onclick="saveLastFactureDate()">💾 Enregistrer</button>
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
-  </div>
-
-  <!-- Écran OCR import -->
-  <div id="ocr-import-screen" class="container">
-    <h3>Importer depuis Doctolib</h3>
-    <input type="file" id="ocr-file-1" accept="image/*">
-    <input type="file" id="ocr-file-2" accept="image/*">
-    <input type="text" id="ocr-presence-date" placeholder="jj/mm/aaaa (vide = aujourd'hui)">
-    <button id="ocr-process-btn" class="save-btn">🔍 Extraire</button>
-    <button id="ocr-import-cancel" class="back-btn" onclick="hideOcrScreen()">↩ Retour</button>
-    <div id="ocr-results"></div>
-    <button id="ocr-import-confirm" class="save-btn" style="display:none">✅ Importer</button>
   </div>
 
   <!-- Menu patient -->
@@ -298,10 +302,10 @@
       <button onclick="addPresenceOffset(2)">Présent après-demain</button>
       <button onclick="showPresenceSelection()">Sélectionner les présences</button>
       <button onclick="showPresenceByDate()">Présent le ...</button>
-      <button>Liste séances facturées</button>
-      <button>Liste séances non facturées</button>
-      <button>Liste de toutes les séances</button>
-      <button onclick="showFacturationDateScreen()">Date de la dernière facturation</button>
+      <button onclick="showFactureList(true)">Liste séances facturées</button>
+      <button onclick="showFactureList(false)">Liste séances non facturées</button>
+      <button onclick="showFactureList()">Liste de toutes les séances</button>
+      <button onclick="showLastFactureScreen()">Date de la dernière facturation</button>
     </div>
   </div>
     <script>
@@ -317,6 +321,7 @@
     let presenceSelection = new Set();
     let currentDayView = null;
 
+    // --- Utilitaires dates ---
     function formatDate(date) {
       return date.toLocaleDateString("fr-FR");
     }
@@ -326,22 +331,29 @@
       const parts = input.split("/");
       if (parts.length === 3) {
         let [jj, mm, aa] = parts;
-        if (aa.length === 2) {
-          aa = "20" + aa;
-        }
+        if (aa.length === 2) aa = "20" + aa;
         return `${jj.padStart(2,"0")}/${mm.padStart(2,"0")}/${aa}`;
       }
       return input;
     }
 
-    // Date du jour
+    // Afficher la date du jour
     function showToday() {
       const today = new Date();
-      const options = { weekday: "long", year: "numeric", month: "long", day: "numeric" };
+      const options = { weekday:"long", year:"numeric", month:"long", day:"numeric" };
       todayDateEl.textContent = today.toLocaleDateString("fr-FR", options);
     }
 
-    // Afficher patients
+    // Compter les présences pour une date
+    function countPresences(dateStr) {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      let count = 0;
+      patients.forEach(p => {
+        if (p.presences && p.presences.includes(dateStr)) count++;
+      });
+      return count;
+    }
+          // --- Gestion Patients ---
     function renderPatients(filter = "") {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
       patientListEl.innerHTML = "";
@@ -361,9 +373,7 @@
 
           const span = document.createElement("span");
           span.textContent = p.nom + " " + p.prenom;
-          if (p.rejet && p.rejet.trim() !== "") {
-            span.textContent += " ⚠️";
-          }
+          if (p.rejet && p.rejet.trim() !== "") span.textContent += " ⚠️";
 
           li.appendChild(deleteBtn);
           li.appendChild(span);
@@ -372,15 +382,16 @@
           patientListEl.appendChild(li);
         });
     }
-          function savePatient() {
+
+    function savePatient() {
       const nom = document.getElementById("nom").value.trim();
       const prenom = document.getElementById("prenom").value.trim();
-      if (!nom || !prenom) { 
-        alert("Veuillez remplir Nom et Prénom"); 
-        return; 
+      if (!nom || !prenom) {
+        alert("Veuillez remplir Nom et Prénom");
+        return;
       }
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      patients.push({nom, prenom, phone:"", rejet:"", notes:"", presences:[], facturationDate:""});
+      patients.push({ nom, prenom, phone:"", rejet:"", notes:"", presences:[], lastFactureDate:null });
       localStorage.setItem("patients", JSON.stringify(patients));
       document.getElementById("nom").value = "";
       document.getElementById("prenom").value = "";
@@ -395,7 +406,7 @@
       renderPatients(searchInput.value);
     }
 
-    // Navigation écrans
+    // --- Navigation ---
     function showAddScreen() {
       hideAll();
       document.getElementById("add-screen").style.display = "block";
@@ -447,31 +458,32 @@
       currentDayView = dateStr;
       renderDayPatients(dateStr);
     }
+    function showLastFactureScreen() {
+      patientMenu.style.display = "none";
+      hideAll();
+      document.getElementById("facturation-date-screen").style.display = "block";
+    }
     function showFactureScreen() {
       hideAll();
       document.getElementById("facture-screen").style.display = "block";
       renderFactureList();
     }
-    function showFacturationDateScreen() {
-      patientMenu.style.display = "none";
-      hideAll();
-      document.getElementById("facturation-date-screen").style.display = "block";
-    }
-    function showOcrImport() {
+    function showOcrScreen() {
       hideAll();
       document.getElementById("ocr-import-screen").style.display = "block";
-      document.getElementById("ocr-results").innerHTML = "";
-      document.getElementById("ocr-import-confirm").style.display = "none";
     }
-    function hideAll() {
-      ["main-screen","add-screen","calendar-screen","info-screen","presence-screen",
-       "presence-date-screen","day-screen","facture-screen","facturation-date-screen","ocr-import-screen"]
-        .forEach(id=>{
-          document.getElementById(id).style.display="none";
-        });
+    function hideOcrScreen() {
+      hideAll();
+      document.getElementById("main-screen").style.display = "block";
     }
 
-    // Menu patient
+    function hideAll() {
+      ["main-screen","add-screen","calendar-screen","info-screen",
+       "presence-screen","presence-date-screen","day-screen",
+       "facturation-date-screen","facture-screen","ocr-import-screen"]
+       .forEach(id => { document.getElementById(id).style.display="none"; });
+    }
+          // --- Menu patient ---
     function showPatientMenu(index) {
       selectedPatientIndex = index;
       patientMenu.style.display = "flex";
@@ -481,7 +493,8 @@
         patientMenu.style.display = "none";
       }
     });
-          // Sauvegarde infos
+
+    // --- Sauvegarde infos ---
     function saveInfo() {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
       if (selectedPatientIndex === null) return;
@@ -492,17 +505,19 @@
       showMainScreen();
     }
 
-    // Ajout présence rapide
+    // --- Ajout présence rapide ---
     function addPresenceOffset(offset) {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
       const p = patients[selectedPatientIndex];
       const d = new Date();
-      d.setDate(d.getDate()+offset);
+      d.setDate(d.getDate() + offset);
       const dateStr = formatDate(d);
       if (!p.presences.includes(dateStr)) p.presences.push(dateStr);
       localStorage.setItem("patients", JSON.stringify(patients));
-      patientMenu.style.display="none";
+      patientMenu.style.display = "none";
     }
+
+    // --- Ajout présence par date ---
     function savePresenceByDate() {
       let dateStr = document.getElementById("presence-date").value.trim();
       if (!dateStr) return;
@@ -513,32 +528,7 @@
       localStorage.setItem("patients", JSON.stringify(patients));
       showMainScreen();
     }
-
-    // Facturation
-    function saveFacturationDate() {
-      let dateStr = document.getElementById("facturation-date").value.trim();
-      if (!dateStr) return;
-      dateStr = normalizeDate(dateStr);
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      patients[selectedPatientIndex].facturationDate = dateStr;
-      localStorage.setItem("patients", JSON.stringify(patients));
-      showMainScreen();
-    }
-
-    function countFacturedVsNonFactured(dateStr) {
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      let total=0, nonFactured=0;
-      patients.forEach(p=>{
-        if (p.presences && p.presences.includes(dateStr)) {
-          total++;
-          if (!p.facturationDate || new Date(p.facturationDate.split("/").reverse().join("-")) < new Date(dateStr.split("/").reverse().join("-"))) {
-            nonFactured++;
-          }
-        }
-      });
-      return { total, nonFactured };
-    }
-          // Calendrier global
+          // --- Calendrier global ---
     function renderCalendar() {
       const titleEl = document.getElementById("calendar-title");
       const gridEl = document.getElementById("calendar-grid");
@@ -564,23 +554,25 @@
       for (let d = 1; d <= lastDay.getDate(); d++) {
         const date = new Date(currentYear, currentMonth, d);
         const dateStr = formatDate(date);
-        const { total, nonFactured } = countFacturedVsNonFactured(dateStr);
+        const count = countPresences(dateStr);
 
         const dayEl = document.createElement("div");
         dayEl.className = "calendar-day";
         dayEl.textContent = d;
 
-        if (total > 40) dayEl.classList.add("red");
-        else if (total >= 35) dayEl.classList.add("orange");
-        else if (total >= 5) dayEl.classList.add("green");
-        else if (total >= 1) dayEl.classList.add("blue");
+        if (count > 40) dayEl.classList.add("red");
+        else if (count >= 35) dayEl.classList.add("orange");
+        else if (count >= 5) dayEl.classList.add("green");
+        else if (count >= 1) dayEl.classList.add("blue");
 
-        if (total > 0) {
-          const pastille = document.createElement("span");
+        // Pastille facturation
+        const pct = facturePercentage(dateStr);
+        if (pct !== null) {
+          const pastille = document.createElement("div");
           pastille.className = "pastille";
-          if (nonFactured/total > 0.5) pastille.style.background="red";
-          else if (nonFactured > 0) pastille.style.background="orange";
-          else pastille.style.background="darkgreen";
+          if (pct === 0) pastille.style.background = "darkgreen";
+          else if (pct > 50) pastille.style.background = "red";
+          else if (pct > 0) pastille.style.background = "orange";
           dayEl.appendChild(pastille);
         }
 
@@ -588,10 +580,18 @@
         gridEl.appendChild(dayEl);
       }
     }
-    function prevMonth() { currentMonth--; if (currentMonth<0){currentMonth=11;currentYear--;} renderCalendar(); }
-    function nextMonth() { currentMonth++; if (currentMonth>11){currentMonth=0;currentYear++;} renderCalendar(); }
+    function prevMonth() {
+      currentMonth--;
+      if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+      renderCalendar();
+    }
+    function nextMonth() {
+      currentMonth++;
+      if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+      renderCalendar();
+    }
 
-    // Calendrier présences (sélection multi)
+    // --- Calendrier présences (multi sélection) ---
     function renderPresenceCalendar() {
       const titleEl = document.getElementById("presence-title");
       const gridEl = document.getElementById("presence-grid");
@@ -632,213 +632,267 @@
         gridEl.appendChild(dayEl);
       }
     }
-    function prevPresenceMonth(){presenceMonth--; if(presenceMonth<0){presenceMonth=11;presenceYear--;} renderPresenceCalendar();}
-    function nextPresenceMonth(){presenceMonth++; if(presenceMonth>11){presenceMonth=0;presenceYear++;} renderPresenceCalendar();}
+    function prevPresenceMonth(){
+      presenceMonth--;
+      if (presenceMonth < 0) { presenceMonth = 11; presenceYear--; }
+      renderPresenceCalendar();
+    }
+    function nextPresenceMonth(){
+      presenceMonth++;
+      if (presenceMonth > 11) { presenceMonth = 0; presenceYear++; }
+      renderPresenceCalendar();
+    }
     function savePresenceSelection() {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
       patients[selectedPatientIndex].presences = Array.from(presenceSelection);
       localStorage.setItem("patients", JSON.stringify(patients));
       showMainScreen();
     }
-
-    // Liste des patients d'une journée
+          // --- Liste des patients d'une journée ---
     function updateDayTitle(dateStr) {
-      const total = countFacturedVsNonFactured(dateStr).total;
-      document.getElementById("day-title").textContent = "Présents le " + dateStr + " — " + total + " patient(s)";
+      const total = countPresences(dateStr);
+      document.getElementById("day-title").textContent =
+        "Présents le " + dateStr + " — " + total + " patient(s)";
     }
 
     function renderDayPatients(dateStr) {
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      dayPatientList.innerHTML="";
-      patients.forEach((p, idx)=>{
+      dayPatientList.innerHTML = "";
+      patients.forEach((p, idx) => {
         if (p.presences && p.presences.includes(dateStr)) {
-          const li=document.createElement("li");
-          const delBtn=document.createElement("button");
-          delBtn.textContent="🗑️";
-          delBtn.className="delete-btn";
-          delBtn.onclick=()=>{
-            p.presences=p.presences.filter(d=>d!==dateStr);
-            patients[idx]=p;
+          const li = document.createElement("li");
+          const delBtn = document.createElement("button");
+          delBtn.textContent = "🗑️";
+          delBtn.className = "delete-btn";
+          delBtn.onclick = () => {
+            p.presences = p.presences.filter(d => d !== dateStr);
+            patients[idx] = p;
             localStorage.setItem("patients", JSON.stringify(patients));
             renderDayPatients(dateStr);
             updateDayTitle(dateStr);
           };
           li.appendChild(delBtn);
-          const span=document.createElement("span");
-          span.textContent=p.nom+" "+p.prenom;
+          const span = document.createElement("span");
+          span.textContent = p.nom + " " + p.prenom;
           li.appendChild(span);
           dayPatientList.appendChild(li);
         }
       });
     }
-          // Liste "À facturer"
-    function renderFactureList() {
+
+    // --- Facturation ---
+    function saveLastFactureDate() {
+      const dateStr = normalizeDate(document.getElementById("last-facture-date").value.trim());
+      if (!dateStr) return;
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      const factureList = document.getElementById("facture-list");
-      factureList.innerHTML = "";
-
-      const today = new Date();
-      const todayStr = formatDate(today);
-
-      let data = patients.map((p, idx) => {
-        let nonFact = 0;
-        (p.presences || []).forEach(dateStr => {
-          if (!p.facturationDate || new Date(p.facturationDate.split("/").reverse().join("-")) < new Date(dateStr.split("/").reverse().join("-"))) {
-            nonFact++;
-          }
-        });
-        return { index: idx, nom: p.nom, prenom: p.prenom, nonFact };
-      }).filter(p => p.nonFact > 0);
-
-      data.sort((a,b)=>{
-        if (b.nonFact !== a.nonFact) return b.nonFact - a.nonFact;
-        return (a.nom+" "+a.prenom).localeCompare(b.nom+" "+b.prenom);
-      });
-
-      data.forEach(p=>{
-        const li=document.createElement("li");
-        let color="white";
-        if (p.nonFact>20) color="red";
-        else if (p.nonFact>=10) color="orange";
-        else if (p.nonFact>=5) color="yellow";
-        else if (p.nonFact>=2) color="lightgreen";
-        else if (p.nonFact===1) color="skyblue";
-        li.style.color=color;
-        li.textContent=p.nom+" "+p.prenom+" ("+p.nonFact+")";
-        factureList.appendChild(li);
-      });
-    }
-
-    // --- OCR Import ---
-    function hideOcrScreen() {
-      document.getElementById("ocr-import-screen").style.display="none";
+      patients[selectedPatientIndex].lastFactureDate = dateStr;
+      localStorage.setItem("patients", JSON.stringify(patients));
       showMainScreen();
     }
 
-    function fuzzyMatch(a, b) {
-      a = a.toLowerCase(); b = b.toLowerCase();
-      let longer = a.length > b.length ? a : b;
-      let shorter = a.length > b.length ? b : a;
-      const longerLength = longer.length;
-      if (longerLength === 0) return 1.0;
-      const editDistance = (s1, s2) => {
-        const costs = [];
-        for (let i=0;i<=s1.length;i++) {
-          let lastValue = i;
-          for (let j=0;j<=s2.length;j++) {
-            if (i===0) costs[j]=j;
-            else {
-              if (j>0) {
-                let newValue = costs[j-1];
-                if (s1.charAt(i-1)!==s2.charAt(j-1)) {
-                  newValue = Math.min(Math.min(newValue,lastValue),costs[j])+1;
-                }
-                costs[j-1]=lastValue;
-                lastValue=newValue;
-              }
-            }
+    // Retourne % de séances non facturées pour une date
+    function facturePercentage(dateStr) {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      let total = 0, nonFact = 0;
+      patients.forEach(p => {
+        if (p.presences && p.presences.includes(dateStr)) {
+          total++;
+          if (!p.lastFactureDate || compareDates(dateStr, p.lastFactureDate) > 0) {
+            nonFact++;
           }
-          if (i>0) costs[s2.length]=lastValue;
         }
-        return costs[s2.length];
-      };
-      return (longerLength - editDistance(longer, shorter)) / parseFloat(longerLength);
-    }
-
-    async function extractTextFromFile(file) {
-      return new Promise((resolve, reject) => {
-        if (!file) return resolve("");
-        Tesseract.recognize(file, 'fra', { logger: m => console.log(m) })
-          .then(({ data: { text } }) => resolve(text))
-          .catch(err => reject(err));
       });
+      if (total === 0) return null;
+      return (nonFact / total) * 100;
     }
 
-    document.getElementById("ocr-process-btn").addEventListener("click", async () => {
-      const file1 = document.getElementById("ocr-file-1").files[0];
-      const file2 = document.getElementById("ocr-file-2").files[0];
-      if (!file1 && !file2) { alert("Ajoutez au moins une capture."); return; }
+    function compareDates(d1, d2) {
+      const [j1,m1,a1] = d1.split("/").map(Number);
+      const [j2,m2,a2] = d2.split("/").map(Number);
+      const date1 = new Date(a1,m1-1,j1);
+      const date2 = new Date(a2,m2-1,j2);
+      if (date1 > date2) return 1;
+      if (date1 < date2) return -1;
+      return 0;
+    }
 
-      const dateInput = document.getElementById("ocr-presence-date").value.trim();
+    // Liste patients "À facturer"
+    function renderFactureList() {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      const ul = document.getElementById("facture-list");
+      ul.innerHTML = "";
+
       const today = new Date();
-      const dateStr = dateInput ? normalizeDate(dateInput) : formatDate(today);
+      const all = patients.map(p => {
+        let nonFact = 0;
+        (p.presences || []).forEach(dateStr => {
+          if (!p.lastFactureDate || compareDates(dateStr, p.lastFactureDate) > 0) {
+            nonFact++;
+          }
+        });
+        return { ...p, nonFact };
+      }).filter(p => p.nonFact > 0);
 
-      let text1 = await extractTextFromFile(file1);
-      let text2 = await extractTextFromFile(file2);
-      let combined = (text1 + "\n" + text2).trim();
-
-      let lines = combined.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-
-      // Filtrage basique
-      lines = lines.filter(l => {
-        if (/^0\d(\s?\d{2}){4}$/.test(l)) return false; // numéros
-        if (/^\d+\s?ans/.test(l)) return false; // âges
-        if (/\d{2}\/\d{2}\/\d{4}/.test(l)) return false; // dates
-        const blacklist = ["choisissez", "rechercher", "ajouter", "patient", "rdv"];
-        if (blacklist.some(b => l.toLowerCase().includes(b))) return false;
-        return /[A-ZÉÈÊÎÔÛÇ]{2,}\s+[A-Z][a-zàâçéèêëîïôûùüÿñæœ]+/.test(l);
+      all.sort((a,b) => {
+        if (b.nonFact !== a.nonFact) return b.nonFact - a.nonFact;
+        return (a.nom + " " + a.prenom).localeCompare(b.nom + " " + b.prenom);
       });
 
-      const resultsDiv = document.getElementById("ocr-results");
-      resultsDiv.innerHTML = "<h4>Patients détectés</h4>";
+      all.forEach(p => {
+        const li = document.createElement("li");
+        li.textContent = p.nom + " " + p.prenom + " (" + p.nonFact + ")";
+        if (p.nonFact > 20) li.style.color = "red";
+        else if (p.nonFact >= 10) li.style.color = "orange";
+        else if (p.nonFact >= 5) li.style.color = "yellow";
+        else if (p.nonFact >= 2) li.style.color = "green";
+        else li.style.color = "skyblue";
+        ul.appendChild(li);
+      });
+    }
+          // --- OCR Doctolib ---
+    async function processOcrFiles() {
+      const files = [
+        document.getElementById("ocr-file-1").files[0],
+        document.getElementById("ocr-file-2").files[0],
+        document.getElementById("ocr-file-3").files[0],
+        document.getElementById("ocr-file-4").files[0],
+        document.getElementById("ocr-file-5").files[0]
+      ].filter(f => f);
+
+      if (files.length === 0) {
+        alert("Veuillez sélectionner au moins une capture.");
+        return;
+      }
+
+      document.getElementById("ocr-results").innerHTML = "🔍 OCR en cours...";
+      let rawText = "";
+
+      for (const file of files) {
+        const { data: { text } } = await Tesseract.recognize(file, "fra");
+        rawText += "\n" + text;
+      }
+
+      const cleaned = cleanOcrText(rawText);
+      showOcrResults(cleaned);
+    }
+
+    function cleanOcrText(text) {
+      return text
+        .split("\n")
+        .map(l => l.trim())
+        .filter(l => l.length > 1)
+        .filter(l => !/^[0-9:\/\-\s]+$/.test(l)) // enlever heures/dates
+        .filter(l => !/\b(Ans|Bon|pan|rdv|consultation)\b/i.test(l)) // enlever bruits
+        .filter(l => /^[A-ZÉÈÊËÀÂÄÎÏÔÖÛÜÇ][A-ZÉÈÊËÀÂÄÎÏÔÖÛÜÇ\- ]+ [A-ZÉÈÊËÀÂÄÎÏÔÖÛÜÇa-zéèêëàâäîïôöûüç\-]+$/.test(l)) // NOM Prénom
+        ;
+    }
+
+    function showOcrResults(lines) {
+      const div = document.getElementById("ocr-results");
+      div.innerHTML = "";
+      if (lines.length === 0) {
+        div.innerHTML = "<p>Aucun patient détecté.</p>";
+        return;
+      }
+
+      const ul = document.createElement("ul");
+      lines.forEach(l => {
+        const li = document.createElement("li");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = true;
+        cb.value = l;
+        li.appendChild(cb);
+        li.appendChild(document.createTextNode(" " + l));
+        ul.appendChild(li);
+      });
+      div.appendChild(ul);
+      document.getElementById("ocr-import-confirm").style.display = "inline-block";
+    }
+
+    document.getElementById("ocr-process-btn").addEventListener("click", processOcrFiles);
+
+    document.getElementById("ocr-import-confirm").addEventListener("click", () => {
+      const div = document.getElementById("ocr-results");
+      const cbs = div.querySelectorAll("input[type=checkbox]:checked");
+      const selectedNames = Array.from(cbs).map(cb => cb.value);
+
+      let dateStr = document.getElementById("ocr-presence-date").value.trim();
+      if (!dateStr) dateStr = formatDate(new Date());
+      else dateStr = normalizeDate(dateStr);
 
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
 
-      lines.forEach(name => {
-        const div = document.createElement("div");
-        const checkbox = document.createElement("input");
-        checkbox.type="checkbox";
-        checkbox.checked=true;
-
-        let matchIndex = -1, bestScore=0;
-        patients.forEach((p,idx)=>{
-          const score=fuzzyMatch(name, p.nom+" "+p.prenom);
-          if (score>bestScore) { bestScore=score; matchIndex=idx; }
-        });
-
-        checkbox.dataset.name=name;
-        if (matchIndex!==-1 && bestScore>0.7) checkbox.dataset.index=matchIndex;
-
-        div.appendChild(checkbox);
-        div.appendChild(document.createTextNode(" "+name+(matchIndex!==-1 ? " (corrélé)" : " (nouveau)")));
-        resultsDiv.appendChild(div);
+      selectedNames.forEach(name => {
+        const [nom, ...prenomParts] = name.split(" ");
+        const prenom = prenomParts.join(" ");
+        let match = patients.find(p => similarity(p.nom+" "+p.prenom, name) > 0.7);
+        if (!match) {
+          patients.push({ nom, prenom, phone:"", rejet:"", notes:"", presences:[dateStr], lastFactureDate:null });
+        } else {
+          if (!match.presences.includes(dateStr)) match.presences.push(dateStr);
+        }
       });
 
-      document.getElementById("ocr-import-confirm").style.display="inline-block";
-
-      document.getElementById("ocr-import-confirm").onclick = () => {
-        const checked = [...resultsDiv.querySelectorAll("input[type=checkbox]:checked")];
-        const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-        checked.forEach(cb => {
-          if (cb.dataset.index) {
-            let p=patients[cb.dataset.index];
-            if (!p.presences.includes(dateStr)) p.presences.push(dateStr);
-          } else {
-            const parts = cb.dataset.name.split(" ");
-            const nom = parts.shift();
-            const prenom = parts.join(" ");
-            patients.push({ nom, prenom, phone:"", rejet:"", notes:"", presences:[dateStr], facturationDate:"" });
-          }
-        });
-        localStorage.setItem("patients", JSON.stringify(patients));
-        hideOcrScreen();
-      };
+      localStorage.setItem("patients", JSON.stringify(patients));
+      hideOcrScreen();
+      showMainScreen();
     });
+
+    function similarity(s1, s2) {
+      s1 = s1.toLowerCase(); s2 = s2.toLowerCase();
+      let longer = s1.length > s2.length ? s1 : s2;
+      let shorter = s1.length > s2.length ? s2 : s1;
+      const longerLength = longer.length;
+      if (longerLength === 0) return 1.0;
+      return (longerLength - editDistance(longer, shorter)) / longerLength;
+    }
+
+    function editDistance(s1, s2) {
+      s1 = s1.toLowerCase();
+      s2 = s2.toLowerCase();
+
+      const costs = [];
+      for (let i = 0; i <= s1.length; i++) {
+        let lastValue = i;
+        for (let j = 0; j <= s2.length; j++) {
+          if (i === 0) costs[j] = j;
+          else {
+            if (j > 0) {
+              let newValue = costs[j - 1];
+              if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
+                newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+              }
+              costs[j - 1] = lastValue;
+              lastValue = newValue;
+            }
+          }
+        }
+        if (i > 0) costs[s2.length] = lastValue;
+      }
+      return costs[s2.length];
+    }
           // --- Téléphone & SMS ---
-    function normalizePhone(num) { return (num||"").replace(/\s+/g,""); }
+    function normalizePhone(num) {
+      return (num || "").replace(/\s+/g, "");
+    }
+
     function callPatient() {
-      const num=document.getElementById("info-phone").value.trim();
-      if (!num) { alert("Aucun numéro renseigné."); return; }
-      window.location.href="tel:"+normalizePhone(num);
+      const num = document.getElementById("info-phone").value.trim();
+      if (!num) { alert("Aucun numéro de téléphone renseigné."); return; }
+      window.location.href = "tel:" + normalizePhone(num);
     }
+
     function smsPatient() {
-      const num=document.getElementById("info-phone").value.trim();
-      if (!num) { alert("Aucun numéro renseigné."); return; }
-      window.location.href="sms:"+normalizePhone(num);
+      const num = document.getElementById("info-phone").value.trim();
+      if (!num) { alert("Aucun numéro de téléphone renseigné."); return; }
+      window.location.href = "sms:" + normalizePhone(num);
     }
+
+    // --- Recherche dynamique ---
+    searchInput.addEventListener("input", () => renderPatients(searchInput.value));
 
     // --- Init ---
-    searchInput.addEventListener("input",()=>renderPatients(searchInput.value));
     showToday();
     renderPatients();
   </script>
