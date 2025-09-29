@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>People Odyssey</title>
+  <link rel="icon" type="image/png" href="PeopleICO.png">
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b1d3a">
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background-color: #0b1d3a;
+      color: white;
+    }
+    header { 
+      padding: 1rem; 
+      text-align: center; 
+      background:#112b55; 
+      font-size: 1.3rem;
+      font-weight: bold;
+    }
+    .container { padding: 1rem; }
+    .today-date {
+      font-size: 0.8rem;
+      color: #ccc;
+      margin-bottom: 0.3rem;
+      text-align: left;
+    }
+    .search-bar { display: flex; margin-bottom: .5rem; }
+    .search-bar input { flex: 1; padding: .6rem; border:none; border-radius:6px; }
+    .actions { display:flex; justify-content:space-between; margin-bottom:1rem; }
+    .actions button, .bottom-actions button { 
+      background:#1f3f7a; 
+      border:none; 
+      padding:.5rem 1rem; 
+      border-radius:6px; 
+      color:white; 
+      cursor:pointer; 
+    }
+    .patient-list { list-style:none; padding:0; margin-bottom: 3rem; }
+    .patient-list li { 
+      background:#16305a; 
+      margin-bottom:.5rem; 
+      padding:.6rem; 
+      border-radius:6px; 
+      display:flex; 
+      align-items:center; 
+      cursor:pointer;
+    }
+    #add-screen, #calendar-screen, #info-screen, #presence-screen, 
+    #presence-date-screen, #day-screen, #facturation-screen { 
+      display:none; 
+      padding:1rem; 
+    }
+    #add-screen input, #info-screen input, #info-screen textarea, 
+    #presence-date-screen input, #facturation-screen input { 
+      width:100%; 
+      margin-bottom:.8rem; 
+      padding:.6rem; 
+      border:none; 
+      border-radius:6px; 
+    }
+    .save-btn { background:#28a745; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; margin-right:.5rem; }
+    .back-btn { background:#6c757d; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; }
+    .delete-btn {
+      background: none;
+      border: none;
+      color: #ff6b6b;
+      font-size: 1.2rem;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+    .bottom-actions {
+      position: fixed;
+      bottom: 10px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      padding: 0 1rem;
+    }
+    /* Menu patient */
+    #patient-menu {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      justify-content: center;
+      align-items: center;
+    }
+    #patient-menu .menu-box {
+      background: #112b55;
+      border-radius: 8px;
+      padding: 1rem;
+      width: 80%;
+      max-width: 400px;
+    }
+    #patient-menu button {
+      display: block;
+      width: 100%;
+      margin: .4rem 0;
+      background: #1f3f7a;
+      border: none;
+      padding: .6rem;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      text-align: left;
+    }
+    /* Calendrier */
+    .calendar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: .5rem;
+    }
+    .calendar-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      text-align: center;
+      margin-bottom: 4px;
+      font-size: 0.9rem;
+      color: #ccc;
+    }
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+    .calendar-day {
+      background: #16305a;
+      border-radius: 4px;
+      text-align: center;
+      padding: .6rem;
+      cursor: pointer;
+      position: relative;
+    }
+    .calendar-day.red { background: red; }
+    .calendar-day.orange { background: orange; }
+    .calendar-day.green { background: green; }
+    .calendar-day.blue { background: skyblue; }
+    .calendar-day.selected { background: deepskyblue; color: white; font-weight: bold; }
+    .calendar-day .badge {
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .phone-row {
+      display: flex;
+      gap: .4rem;
+      align-items: center;
+    }
+    .phone-row input { flex: 1; }
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      padding: .6rem;
+      border: none;
+      border-radius: 6px;
+      background: #1f3f7a;
+      color: white;
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+    .icon-btn:active { transform: scale(0.98); }
+  </style>
+</head>
+<body>
+  <header>People Odyssey</header>
+
+  <!-- Écran principal -->
+  <div id="main-screen" class="container">
+    <div class="today-date" id="todayDate"></div>
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="Rechercher un patient...">
+    </div>
+    <div class="actions">
+      <button onclick="showAddScreen()">+</button>
+      <button>Liste spéciale</button>
+    </div>
+    <ul class="patient-list" id="patientList"></ul>
+    <div class="bottom-actions">
+      <button onclick="showCalendar()">Calendrier</button>
+      <button>À facturer</button>
+    </div>
+  </div>
+
+  <!-- Écran ajout patient -->
+  <div id="add-screen" class="container">
+    <input type="text" id="nom" placeholder="Nom">
+    <input type="text" id="prenom" placeholder="Prénom">
+    <button class="save-btn" onclick="savePatient()">💾 Enregistrer</button>
+    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  </div>
+
+  <!-- Écran calendrier global -->
+  <div id="calendar-screen" class="container">
+    <div class="calendar-header">
+      <button onclick="prevMonth()">◀</button>
+      <span id="calendar-title"></span>
+      <button onclick="nextMonth()">▶</button>
+    </div>
+    <div class="calendar-weekdays">
+      <div>Lun</div><div>Mar</div><div>Mer</div><div>Jeu</div><div>Ven</div><div>Sam</div><div>Dim</div>
+    </div>
+    <div class="calendar-grid" id="calendar-grid"></div>
+    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  </div>
+
+  <!-- Écran informations patient -->
+  <div id="info-screen" class="container">
+    <h3 id="info-title"></h3>
+    <div class="phone-row">
+      <input type="tel" id="info-phone" placeholder="Numéro de téléphone">
+      <button class="icon-btn" title="Appeler" onclick="callPatient()">📞</button>
+      <button class="icon-btn" title="SMS" onclick="smsPatient()">💬</button>
+    </div>
+    <input type="text" id="info-rejet" placeholder="Rejet de paiement">
+    <textarea id="info-notes" rows="4" placeholder="Autres notes..."></textarea>
+    <button class="save-btn" onclick="saveInfo()">💾 Enregistrer</button>
+    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  </div>
+
+  <!-- Écran sélection présences -->
+  <div id="presence-screen" class="container">
+    <h3>Sélectionner les présences</h3>
+    <div class="calendar-header">
+      <button onclick="prevPresenceMonth()">◀</button>
+      <span id="presence-title"></span>
+      <button onclick="nextPresenceMonth()">▶</button>
+    </div>
+    <div class="calendar-weekdays">
+      <div>Lun</div><div>Mar</div><div>Mer</div><div>Jeu</div><div>Ven</div><div>Sam</div><div>Dim</div>
+    </div>
+    <div class="calendar-grid" id="presence-grid"></div>
+    <button class="save-btn" onclick="savePresenceSelection()">💾 Enregistrer</button>
+    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  </div>
+
+  <!-- Écran ajout présence par date -->
+  <div id="presence-date-screen" class="container">
+    <h3>Présent le ...</h3>
+    <input type="text" id="presence-date" placeholder="jj/mm/aa">
+    <button class="save-btn" onclick="savePresenceByDate()">💾 Enregistrer</button>
+    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  </div>
+
+  <!-- Écran patients d'une journée -->
+  <div id="day-screen" class="container">
+    <h3 id="day-title"></h3>
+    <ul id="day-patient-list"></ul>
+    <button class="back-btn" onclick="showCalendar()">↩ Retour</button>
+  </div>
+
+  <!-- Écran dernière facturation -->
+  <div id="facturation-screen" class="container">
+    <h3>Date de la dernière facturation</h3>
+    <input type="text" id="facturation-date" placeholder="jj/mm/aa">
+    <button class="save-btn" onclick="saveFacturationDate()">💾 Enregistrer</button>
+    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  </div>
+
+  <!-- Menu patient -->
+  <div id="patient-menu">
+    <div class="menu-box">
+      <button onclick="showInfoScreen()">Informations</button>
+      <button onclick="addPresenceOffset(0)">Présent ce jour</button>
+      <button onclick="addPresenceOffset(1)">Présent demain</button>
+      <button onclick="addPresenceOffset(2)">Présent après-demain</button>
+      <button onclick="showPresenceSelection()">Sélectionner les présences</button>
+      <button onclick="showPresenceByDate()">Présent le ...</button>
+      <button>Liste séances facturées</button>
+      <button>Liste séances non facturées</button>
+      <button>Liste de toutes les séances</button>
+      <button onclick="showFacturationScreen()">Date de la dernière facturation</button>
+    </div>
+  </div>
+
+  <!-- Script à suivre dans les blocs 2,3,4 -->
+  <script>
+    const patientListEl = document.getElementById("patientList");
+    const searchInput = document.getElementById("searchInput");
+    const patientMenu = document.getElementById("patient-menu");
+    const todayDateEl = document.getElementById("todayDate");
+    const dayPatientList = document.getElementById("day-patient-list");
+
+    let currentYear, currentMonth;
+    let presenceYear, presenceMonth;
+    let selectedPatientIndex = null;
+    let presenceSelection = new Set();
+    let currentDayView = null;
+
+    function formatDate(date) {
+      return date.toLocaleDateString("fr-FR");
+    }
+
+    // Normaliser une date entrée par l'utilisateur (jj/mm/aa → jj/mm/aaaa)
+    function normalizeDate(input) {
+      const parts = input.split("/");
+      if (parts.length === 3) {
+        let [jj, mm, aa] = parts;
+        if (aa.length === 2) {
+          aa = "20" + aa;
+        }
+        return `${jj.padStart(2,"0")}/${mm.padStart(2,"0")}/${aa}`;
+      }
+      return input;
+    }
+
+    // Date du jour
+    function showToday() {
+      const today = new Date();
+      const options = { weekday: "long", year: "numeric", month: "long", day: "numeric" };
+      todayDateEl.textContent = today.toLocaleDateString("fr-FR", options);
+    }
+
+    // Compter les présences pour une date
+    function countPresences(dateStr) {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      let count = 0;
+      patients.forEach(p => {
+        if (p.presences && p.presences.includes(dateStr)) count++;
+      });
+      return count;
+    }
+
+    // Afficher patients
+    function renderPatients(filter = "") {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      patientListEl.innerHTML = "";
+
+      patients
+        .filter(p => (p.nom + " " + p.prenom).toLowerCase().includes(filter.toLowerCase()))
+        .forEach((p, index) => {
+          const li = document.createElement("li");
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.innerHTML = "🗑️";
+          deleteBtn.className = "delete-btn";
+          deleteBtn.onclick = (e) => {
+            e.stopPropagation();
+            deletePatient(index);
+          };
+
+          const span = document.createElement("span");
+          span.textContent = p.nom + " " + p.prenom;
+          if (p.rejet && p.rejet.trim() !== "") {
+            span.textContent += " ⚠️";
+          }
+
+          li.appendChild(deleteBtn);
+          li.appendChild(span);
+          li.onclick = () => showPatientMenu(index);
+
+          patientListEl.appendChild(li);
+        });
+    }
+
+    function savePatient() {
+      const nom = document.getElementById("nom").value.trim();
+      const prenom = document.getElementById("prenom").value.trim();
+      if (!nom || !prenom) { 
+        alert("Veuillez remplir Nom et Prénom"); 
+        return; 
+      }
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      patients.push({nom, prenom, phone:"", rejet:"", notes:"", presences:[], facturationDate:""});
+      localStorage.setItem("patients", JSON.stringify(patients));
+      document.getElementById("nom").value = "";
+      document.getElementById("prenom").value = "";
+      showMainScreen();
+      renderPatients(searchInput.value);
+    }
+
+    function deletePatient(index) {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      patients.splice(index, 1);
+      localStorage.setItem("patients", JSON.stringify(patients));
+      renderPatients(searchInput.value);
+    }
+
+    // Navigation écrans
+    function showAddScreen() {
+      hideAll();
+      document.getElementById("add-screen").style.display = "block";
+    }
+    function showMainScreen() {
+      hideAll();
+      document.getElementById("main-screen").style.display = "block";
+      renderPatients(searchInput.value);
+    }
+    function showCalendar() {
+      hideAll();
+      document.getElementById("calendar-screen").style.display = "block";
+      renderCalendar();
+    }
+    function showInfoScreen() {
+      patientMenu.style.display = "none";
+      hideAll();
+      document.getElementById("info-screen").style.display = "block";
+
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      const p = patients[selectedPatientIndex];
+      document.getElementById("info-title").textContent = p.nom + " " + p.prenom;
+      document.getElementById("info-phone").value = p.phone || "";
+      document.getElementById("info-rejet").value = p.rejet || "";
+      document.getElementById("info-notes").value = p.notes || "";
+    }
+    function showPresenceSelection() {
+      patientMenu.style.display = "none";
+      hideAll();
+      document.getElementById("presence-screen").style.display = "block";
+
+      const today = new Date();
+      presenceYear = today.getFullYear();
+      presenceMonth = today.getMonth();
+      presenceSelection = new Set(
+        (JSON.parse(localStorage.getItem("patients"))[selectedPatientIndex].presences || [])
+      );
+      renderPresenceCalendar();
+    }
+    function showPresenceByDate() {
+      patientMenu.style.display = "none";
+      hideAll();
+      document.getElementById("presence-date-screen").style.display = "block";
+    }
+    function showDayScreen(dateStr) {
+      hideAll();
+      document.getElementById("day-screen").style.display = "block";
+      updateDayTitle(dateStr);
+      currentDayView = dateStr;
+      renderDayPatients(dateStr);
+    }
+    function showFacturationScreen() {
+      patientMenu.style.display = "none";
+      hideAll();
+      document.getElementById("facturation-screen").style.display = "block";
+
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      const p = patients[selectedPatientIndex];
+      document.getElementById("facturation-date").value = p.facturationDate || "";
+    }
+    function hideAll() {
+      ["main-screen","add-screen","calendar-screen","info-screen",
+       "presence-screen","presence-date-screen","day-screen","facturation-screen"]
+       .forEach(id => {
+        document.getElementById(id).style.display="none";
+      });
+    }
+
+    // Menu patient
+    function showPatientMenu(index) {
+      selectedPatientIndex = index;
+      patientMenu.style.display = "flex";
+    }
+    patientMenu.addEventListener("click", (e) => {
+      if (e.target === patientMenu) {
+        patientMenu.style.display = "none";
+      }
+    });
+
+    // Sauvegarde infos
+    function saveInfo() {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      if (selectedPatientIndex === null) return;
+      patients[selectedPatientIndex].phone = document.getElementById("info-phone").value.trim();
+      patients[selectedPatientIndex].rejet = document.getElementById("info-rejet").value.trim();
+      patients[selectedPatientIndex].notes = document.getElementById("info-notes").value.trim();
+      localStorage.setItem("patients", JSON.stringify(patients));
+      showMainScreen();
+    }
+    // Ajout présence rapide
+    function addPresenceOffset(offset) {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      const p = patients[selectedPatientIndex];
+      const d = new Date();
+      d.setDate(d.getDate() + offset);
+      const dateStr = formatDate(d);
+      if (!p.presences.includes(dateStr)) p.presences.push(dateStr);
+      localStorage.setItem("patients", JSON.stringify(patients));
+      patientMenu.style.display = "none";
+    }
+
+    function savePresenceByDate() {
+      let dateStr = document.getElementById("presence-date").value.trim();
+      if (!dateStr) return;
+      dateStr = normalizeDate(dateStr);
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      const p = patients[selectedPatientIndex];
+      if (!p.presences.includes(dateStr)) p.presences.push(dateStr);
+      localStorage.setItem("patients", JSON.stringify(patients));
+      showMainScreen();
+    }
+
+    // Facturation
+    function saveFacturationDate() {
+      let dateStr = document.getElementById("facturation-date").value.trim();
+      if (dateStr) {
+        dateStr = normalizeDate(dateStr);
+      }
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      patients[selectedPatientIndex].facturationDate = dateStr || "";
+      localStorage.setItem("patients", JSON.stringify(patients));
+      showMainScreen();
+    }
+
+    function isFactured(p, dateStr) {
+      if (!p.facturationDate) return false;
+      const [dd, mm, yyyy] = p.facturationDate.split("/");
+      const factDate = new Date(`${yyyy}-${mm}-${dd}`);
+      const [dd2, mm2, yyyy2] = dateStr.split("/");
+      const checkDate = new Date(`${yyyy2}-${mm2}-${dd2}`);
+      return checkDate <= factDate;
+    }
+
+    function countFacturedVsNonFactured(dateStr) {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      let total = 0, nonFactured = 0;
+      patients.forEach(p => {
+        if (p.presences && p.presences.includes(dateStr)) {
+          total++;
+          if (!isFactured(p, dateStr)) nonFactured++;
+        }
+      });
+      return { total, nonFactured };
+    }
+
+    // Calendrier global
+    function renderCalendar() {
+      const titleEl = document.getElementById("calendar-title");
+      const gridEl = document.getElementById("calendar-grid");
+
+      const today = new Date();
+      if (currentYear === undefined) {
+        currentYear = today.getFullYear();
+        currentMonth = today.getMonth();
+      }
+
+      const firstDay = new Date(currentYear, currentMonth, 1);
+      const lastDay = new Date(currentYear, currentMonth + 1, 0);
+      const monthName = firstDay.toLocaleString("fr-FR", { month: "long" });
+
+      titleEl.textContent = monthName + " " + currentYear;
+      gridEl.innerHTML = "";
+
+      const startDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+      for (let i = 0; i < startDay; i++) {
+        gridEl.appendChild(document.createElement("div"));
+      }
+
+      for (let d = 1; d <= lastDay.getDate(); d++) {
+        const date = new Date(currentYear, currentMonth, d);
+        const dateStr = formatDate(date);
+        const { total, nonFactured } = countFacturedVsNonFactured(dateStr);
+
+        const dayEl = document.createElement("div");
+        dayEl.className = "calendar-day";
+        dayEl.textContent = d;
+
+        if (total > 40) dayEl.classList.add("red");
+        else if (total >= 35) dayEl.classList.add("orange");
+        else if (total >= 5) dayEl.classList.add("green");
+        else if (total >= 1) dayEl.classList.add("blue");
+
+        if (total > 0) {
+          const badge = document.createElement("span");
+      
