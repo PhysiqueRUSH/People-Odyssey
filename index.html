@@ -360,34 +360,38 @@
       return count;
     }
           // --- Gestion Patients ---
-    function renderPatients(filter = "") {
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      patientListEl.innerHTML = "";
+ function renderPatients(filter = "") {
+  const all = JSON.parse(localStorage.getItem("patients") || "[]");
+  patientListEl.innerHTML = "";
 
-      patients
-        .filter(p => (p.nom + " " + p.prenom).toLowerCase().includes(filter.toLowerCase()))
-        .forEach((p, index) => {
-          const li = document.createElement("li");
+  // Conserve l'index original i
+  const rows = all
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => (p.nom + " " + p.prenom).toLowerCase().includes(filter.toLowerCase()));
 
-          const deleteBtn = document.createElement("button");
-          deleteBtn.innerHTML = "🗑️";
-          deleteBtn.className = "delete-btn";
-          deleteBtn.onclick = (e) => {
-            e.stopPropagation();
-            deletePatient(index);
-          };
+  rows.forEach(({ p, i }) => {
+    const li = document.createElement("li");
 
-          const span = document.createElement("span");
-          span.textContent = p.nom + " " + p.prenom;
-          if (p.rejet && p.rejet.trim() !== "") span.textContent += " ⚠️";
+    const deleteBtn = document.createElement("button");
+    deleteBtn.innerHTML = "🗑️";
+    deleteBtn.className = "delete-btn";
+    deleteBtn.onclick = (e) => {
+      e.stopPropagation();
+      deletePatient(i); // ← utilise l'index original
+    };
 
-          li.appendChild(deleteBtn);
-          li.appendChild(span);
-          li.onclick = () => showPatientMenu(index);
+    const span = document.createElement("span");
+    span.textContent = p.nom + " " + p.prenom;
+    if (p.rejet && p.rejet.trim() !== "") span.textContent += " ⚠️";
 
-          patientListEl.appendChild(li);
-        });
-    }
+    li.appendChild(deleteBtn);
+    li.appendChild(span);
+
+    li.onclick = () => showPatientMenu(i); // ← index original
+    patientListEl.appendChild(li);
+  });
+}
+
 
     function savePatient() {
       const nom = document.getElementById("nom").value.trim();
