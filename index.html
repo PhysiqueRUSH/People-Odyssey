@@ -776,18 +776,67 @@
       showOcrResults(cleaned);
     }
 
-    // Nettoyage du texte OCR (plus tolérant)
+    // Nettoyage du texte OCR 
     function cleanOcrText(text) {
-      return text
-        .split("\n")
-        .map(l => l.replace(/\d{1,2}[:h]\d{2}/g,""))       // supprime heures type 08:45
-        .map(l => l.replace(/\d{1,2}\/\d{1,2}\/\d{2,4}/g,"")) // supprime dates type 29/09/2025
-        .map(l => l.replace(/[|@+]/g," "))                 // supprime symboles parasites
-        .map(l => l.trim())
-        .filter(l => l.length > 2)
-        .filter(l => /\s/.test(l)) // au moins deux mots
-        .filter(l => /[A-ZÉÈÊËÀÂÄÎÏÔÖÛÜÇ]{2,}/.test(l)); // contient un nom avec majuscules
-    }
+  // 1) Nettoyage large des lignes
+  const lines = text.split("\n")
+    .map(l => l.replace(/\d{1,2}[:h]\d{2}/g,""))             // heures
+    .map(l => l.replace(/\d{1,2}\/\d{1,2}\/\d{2,4}/g,""))     // dates
+    .map(l => l.replace(/[|@+]/g," "))                        // symboles parasites
+    .map(l => l.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ \-']/g, " "))      // garde lettres/accents/espaces/tirets/'
+    .map(l => l.replace(/\s+/g," ").trim())
+    .filter(l => l.length > 2);
+
+  const results = new Set();
+
+  for (const raw of lines) {
+    const normalized = normalizeOcrName(raw);
+    if (normalized) results.add(normalized);
+  }
+  return Array.from(results);
+}
+
+// Extrait strictement "NOM Prénom" à partir d'une ligne
+function normalizeOcrName(line) {
+  if (!line) return null;
+
+  // Tokenise en conservant accents et tirets
+  const tokens = line.split(/\s+/).filter(Boolean);
+
+  // Sépare les tokens UPPERCASE (NOM) des tokens Prénom (Capitalisés)
+  const up = [];
+  const first = [];
+
+  for (const t of tokens) {
+    const hasLetter = /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(t);
+    if (!hasLetter) continue;
+
+    const isUpper = t === t.toUpperCase() && t.length >= 2;
+    const isCap   = /^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ'’-]+$/.test(t); // Prénom capitalisé, accents ok
+
+    if (isUpper) up.push(t);
+    else if (isCap) first.push(t);
+  }
+
+  if (up.length === 0 || first.length === 0) return null;
+
+  // Cas "NOM NOM Prénom" → si doublon initial exact, on compacte
+  // ex: DUPONT DUPONT Pierre → DUPONT Pierre
+  let surname = up[0];
+  if (up.length >= 2 && up[0].replace(/[-’']/g,"") === up[1].replace(/[-’']/g,"")) {
+    surname = up[0]; // garde un seul
+  }
+
+  // Si plusieurs NOM différents détectés (ligne bavarde), on prend le premier bloc UPPER plausible
+  // et on ignore le reste pour rester strict.
+  const firstname = first.join(" ");
+
+  // Filtre final : NOM = 2+ lettres, Prénom = 2+ lettres
+  if (surname.length < 2 || firstname.length < 2) return null;
+
+  return `${surname} ${firstname}`;
+}
+
 
     function showOcrResults(lines) {
       const div = document.getElementById("ocr-results");
@@ -814,33 +863,68 @@
 
     document.getElementById("ocr-process-btn").addEventListener("click", processOcrFiles);
 
-    document.getElementById("ocr-import-confirm").addEventListener("click", () => {
-      const div = document.getElementById("ocr-results");
-      const cbs = div.querySelectorAll("input[type=checkbox]:checked");
-      const selectedNames = Array.from(cbs).map(cb => cb.value);
+   document.getElementById("ocr-import-confirm").addEventListener("click", () => {
+  const div = document.getElementById("ocr-results");
+  const cbs = div.querySelectorAll("input[type=checkbox]:checked");
+  const selectedNames = Array.from(cbs).map(cb => cb.value);
 
-      let dateStr = document.getElementById("ocr-presence-date").value.trim();
-      if (!dateStr) dateStr = formatDate(new Date());
-      else dateStr = normalizeDate(dateStr);
+  // Date de présence (aujourd'hui par défaut)
+  let dateStr = document.getElementById("ocr-presence-date").value.trim();
+  if (!dateStr) dateStr = formatDate(new Date());
+  else dateStr = normalizeDate(dateStr);
 
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
 
-      selectedNames.forEach(name => {
-        const [nom, ...prenomParts] = name.split(" ");
-        const prenom = prenomParts.join(" ");
-        let match = patients.find(p => similarity(p.nom+" "+p.prenom, name) > 0.7);
-        if (!match) {
-          patients.push({ nom, prenom, phone:"", rejet:"", notes:"", presences:[dateStr], lastFactureDate:null });
-        } else {
-          if (!match.presences.includes(dateStr)) match.presences.push(dateStr);
-        }
+  // Set de clés normalisées existantes (utile si tu veux l’utiliser ailleurs)
+  const existingKeys = new Set(patients.map(p => keyName(p.nom, p.prenom)));
+
+  selectedNames.forEach(name => {
+    // cleanOcrText() renvoie déjà "NOM Prénom" strict → split simple
+    const parts = name.split(" ");
+    const nom = parts[0] || "";
+    const prenom = parts.slice(1).join(" ") || "";
+
+    const k = keyName(nom, prenom);
+
+    // 1) Match EXACT par clé normalisée
+    let match = patients.find(p => keyName(p.nom, p.prenom) === k);
+
+    // 2) Sinon, fallback flou (plus strict que ton 0.7 → 0.85)
+    if (!match) {
+      match = patients.find(p => similarity(p.nom + " " + p.prenom, name) > 0.85);
+    }
+
+    if (!match) {
+      // Crée le patient et ajoute la présence du jour choisi
+      patients.push({
+        nom,
+        prenom,
+        phone: "",
+        rejet: "",
+        notes: "",
+        presences: [dateStr],
+        lastFactureDate: null
       });
+    } else {
+      // Ajoute la présence si elle n’existe pas
+      if (!match.presences.includes(dateStr)) match.presences.push(dateStr);
+    }
+  });
 
-      localStorage.setItem("patients", JSON.stringify(patients));
-      hideOcrScreen();
-      showMainScreen();
-    });
+  localStorage.setItem("patients", JSON.stringify(patients));
+  hideOcrScreen();
+  showMainScreen();
+});
 
+
+function keyName(nom, prenom) {
+  return (nom + "|" + prenom).toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // retire accents
+    .replace(/[^a-z\-| ]/g,"")                        // garde lettres, espaces, tirets, |
+    .replace(/\s+/g," ").trim();
+}
+
+      
     // Fonction de similarité floue (Levenshtein)
     function similarity(s1, s2) {
       s1 = s1.toLowerCase(); s2 = s2.toLowerCase();
