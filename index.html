@@ -226,7 +226,7 @@
 
   <!-- Écran "À facturer" -->
   <div id="facture-screen" class="container">
-    <h3>Patients avec séances non facturées</h3>
+    <h3 id="facture-title">Patients avec séances non facturées</h3>
     <ul id="facture-list"></ul>
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
@@ -730,16 +730,16 @@
 function renderFactureList() {
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const ul = document.getElementById("facture-list");
+  const titleEl = document.getElementById("facture-title");
   ul.innerHTML = "";
 
-  // Ne comptabiliser que les séances <= aujourd'hui
-  const todayStr = formatDate(new Date());
+  const todayStr = formatDate(new Date()); // on ignore les séances > aujourd'hui
 
+  // Calcule le nonFact par patient (en excluant le futur)
   const all = patients.map(p => {
     let nonFact = 0;
     (p.presences || []).forEach(dateStr => {
-      // on ignore les présences futures
-      if (compareDates(dateStr, todayStr) <= 0) {
+      if (compareDates(dateStr, todayStr) <= 0) { // seulement aujourd'hui ou passé
         if (!p.lastFactureDate || compareDates(dateStr, p.lastFactureDate) > 0) {
           nonFact++;
         }
@@ -748,27 +748,33 @@ function renderFactureList() {
     return { ...p, nonFact };
   }).filter(p => p.nonFact > 0);
 
+  // Total global
+  const totalGlobal = all.reduce((sum, p) => sum + p.nonFact, 0);
+  if (titleEl) {
+    titleEl.textContent = `Patients avec séances non facturées (${totalGlobal})`;
+  }
+
   // Tri : plus de nonFact d'abord, puis alpha
   all.sort((a,b) => {
     if (b.nonFact !== a.nonFact) return b.nonFact - a.nonFact;
     return (a.nom + " " + a.prenom).localeCompare(b.nom + " " + b.prenom);
   });
 
-  // Affichage avec codes couleurs "comme avant"
+  // Rendu avec codes couleurs "comme avant"
   all.forEach(p => {
     const li = document.createElement("li");
     li.textContent = `${p.nom} ${p.prenom} (${p.nonFact})`;
 
-    // Codes couleurs (texte) restaurés
-    if (p.nonFact > 20)      li.style.color = "red";
-    else if (p.nonFact >= 10) li.style.color = "orange";
-    else if (p.nonFact >= 5)  li.style.color = "yellow";
-    else if (p.nonFact >= 2)  li.style.color = "green";
-    else                      li.style.color = "skyblue";
+    if (p.nonFact > 20)        li.style.color = "red";
+    else if (p.nonFact >= 10)  li.style.color = "orange";
+    else if (p.nonFact >= 5)   li.style.color = "yellow";
+    else if (p.nonFact >= 2)   li.style.color = "green";
+    else                       li.style.color = "skyblue";
 
     ul.appendChild(li);
   });
 }
+
 
     // --- OCR Doctolib ---
     async function processOcrFiles() {
