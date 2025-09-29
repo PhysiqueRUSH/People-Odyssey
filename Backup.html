@@ -574,4 +574,155 @@
 
         if (total > 0) {
           const badge = document.createElement("span");
-      
+          badge.className = "badge";
+          if (nonFactured > total / 2) badge.style.background = "red";
+          else if (nonFactured > 0) badge.style.background = "orange";
+          else badge.style.background = "darkgreen";
+          dayEl.appendChild(badge);
+        }
+
+        dayEl.onclick = () => showDayScreen(dateStr);
+        gridEl.appendChild(dayEl);
+      }
+    }
+
+    function prevMonth() {
+      currentMonth--;
+      if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+      renderCalendar();
+    }
+
+    function nextMonth() {
+      currentMonth++;
+      if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+      renderCalendar();
+    }
+
+    // Calendrier présences (sélection multi)
+    function renderPresenceCalendar() {
+      const titleEl = document.getElementById("presence-title");
+      const gridEl = document.getElementById("presence-grid");
+
+      const firstDay = new Date(presenceYear, presenceMonth, 1);
+      const lastDay = new Date(presenceYear, presenceMonth + 1, 0);
+      const monthName = firstDay.toLocaleString("fr-FR", { month: "long" });
+
+      titleEl.textContent = monthName + " " + presenceYear;
+      gridEl.innerHTML = "";
+
+      const startDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+      for (let i = 0; i < startDay; i++) {
+        gridEl.appendChild(document.createElement("div"));
+      }
+
+      for (let d = 1; d <= lastDay.getDate(); d++) {
+        const date = new Date(presenceYear, presenceMonth, d);
+        const dateStr = formatDate(date);
+        const dayEl = document.createElement("div");
+        dayEl.className = "calendar-day";
+        dayEl.textContent = d;
+
+        if (presenceSelection.has(dateStr)) {
+          dayEl.classList.add("selected");
+        }
+
+        dayEl.onclick = () => {
+          if (presenceSelection.has(dateStr)) {
+            presenceSelection.delete(dateStr);
+            dayEl.classList.remove("selected");
+          } else {
+            presenceSelection.add(dateStr);
+            dayEl.classList.add("selected");
+          }
+        };
+
+        gridEl.appendChild(dayEl);
+      }
+    }
+
+    function prevPresenceMonth() {
+      presenceMonth--;
+      if (presenceMonth < 0) { presenceMonth = 11; presenceYear--; }
+      renderPresenceCalendar();
+    }
+
+    function nextPresenceMonth() {
+      presenceMonth++;
+      if (presenceMonth > 11) { presenceMonth = 0; presenceYear++; }
+      renderPresenceCalendar();
+    }
+
+    function savePresenceSelection() {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      patients[selectedPatientIndex].presences = Array.from(presenceSelection);
+      localStorage.setItem("patients", JSON.stringify(patients));
+      showMainScreen();
+    }
+    // Liste des patients d'une journée
+    function updateDayTitle(dateStr) {
+      const { total } = countFacturedVsNonFactured(dateStr);
+      document.getElementById("day-title").textContent =
+        "Présents le " + dateStr + " — " + total + " patient(s)";
+    }
+
+    function renderDayPatients(dateStr) {
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      dayPatientList.innerHTML = "";
+      patients.forEach((p, idx) => {
+        if (p.presences && p.presences.includes(dateStr)) {
+          const li = document.createElement("li");
+
+          const delBtn = document.createElement("button");
+          delBtn.textContent = "🗑️";
+          delBtn.className = "delete-btn";
+          delBtn.onclick = () => {
+            p.presences = p.presences.filter(d => d !== dateStr);
+            patients[idx] = p;
+            localStorage.setItem("patients", JSON.stringify(patients));
+            renderDayPatients(dateStr);
+            updateDayTitle(dateStr);
+          };
+          li.appendChild(delBtn);
+
+          const span = document.createElement("span");
+          span.textContent = p.nom + " " + p.prenom;
+
+          // Statut facturation
+          if (isFactured(p, dateStr)) {
+            span.textContent += " ✅";
+          } else {
+            span.textContent += " ❌";
+          }
+
+          li.appendChild(span);
+          dayPatientList.appendChild(li);
+        }
+      });
+    }
+
+    // Recherche dynamique
+    searchInput.addEventListener("input", () => renderPatients(searchInput.value));
+
+    // Téléphone & SMS
+    function normalizePhone(num) {
+      return (num || "").replace(/\s+/g, "");
+    }
+
+    function callPatient() {
+      const num = document.getElementById("info-phone").value.trim();
+      if (!num) { alert("Aucun numéro de téléphone renseigné."); return; }
+      window.location.href = "tel:" + normalizePhone(num);
+    }
+
+    function smsPatient() {
+      const num = document.getElementById("info-phone").value.trim();
+      if (!num) { alert("Aucun numéro de téléphone renseigné."); return; }
+      window.location.href = "sms:" + normalizePhone(num);
+    }
+
+    // Init
+    showToday();
+    renderPatients();
+  </script>
+</body>
+</html>
