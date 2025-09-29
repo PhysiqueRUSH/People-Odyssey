@@ -723,38 +723,39 @@
     }
 
     // Liste patients "À facturer"
-    function renderFactureList() {
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      const ul = document.getElementById("facture-list");
-      ul.innerHTML = "";
+function renderFactureList() {
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const ul = document.getElementById("facture-list");
+  ul.innerHTML = "";
 
-      const today = new Date();
-      const all = patients.map(p => {
-        let nonFact = 0;
-        (p.presences || []).forEach(dateStr => {
-          if (!p.lastFactureDate || compareDates(dateStr, p.lastFactureDate) > 0) {
-            nonFact++;
-          }
-        });
-        return { ...p, nonFact };
-      }).filter(p => p.nonFact > 0);
+  const todayStr = formatDate(new Date()); // ← ajoute cette ligne
 
-      all.sort((a,b) => {
-        if (b.nonFact !== a.nonFact) return b.nonFact - a.nonFact;
-        return (a.nom + " " + a.prenom).localeCompare(b.nom + " " + b.prenom);
-      });
+  const all = patients.map(p => {
+    let nonFact = 0;
+    (p.presences || []).forEach(dateStr => {
+      // NE COMPTER QUE si la séance est à aujourd'hui ou avant
+      if (compareDates(dateStr, todayStr) <= 0) {
+        if (!p.lastFactureDate || compareDates(dateStr, p.lastFactureDate) > 0) {
+          nonFact++;
+        }
+      }
+    });
+    return { ...p, nonFact };
+  }).filter(p => p.nonFact > 0);
 
-      all.forEach(p => {
-        const li = document.createElement("li");
-        li.textContent = p.nom + " " + p.prenom + " (" + p.nonFact + ")";
-        if (p.nonFact > 20) li.style.color = "red";
-        else if (p.nonFact >= 10) li.style.color = "orange";
-        else if (p.nonFact >= 5) li.style.color = "yellow";
-        else if (p.nonFact >= 2) li.style.color = "green";
-        else li.style.color = "skyblue";
-        ul.appendChild(li);
-      });
-    }
+  all.sort((a,b) => {
+    if (b.nonFact !== a.nonFact) return b.nonFact - a.nonFact;
+    return (a.nom + " " + a.prenom).localeCompare(b.nom + " " + b.prenom);
+  });
+
+  all.forEach(p => {
+    const li = document.createElement("li");
+    li.textContent = `${p.nom} ${p.prenom} (${p.nonFact})`;
+    // garde ton styling existant ici si tu veux
+    ul.appendChild(li);
+  });
+}
+
     // --- OCR Doctolib ---
     async function processOcrFiles() {
       const files = [
