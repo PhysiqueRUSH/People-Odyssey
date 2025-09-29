@@ -732,12 +732,13 @@ function renderFactureList() {
   const ul = document.getElementById("facture-list");
   ul.innerHTML = "";
 
-  const todayStr = formatDate(new Date()); // ← ajoute cette ligne
+  // Ne comptabiliser que les séances <= aujourd'hui
+  const todayStr = formatDate(new Date());
 
   const all = patients.map(p => {
     let nonFact = 0;
     (p.presences || []).forEach(dateStr => {
-      // NE COMPTER QUE si la séance est à aujourd'hui ou avant
+      // on ignore les présences futures
       if (compareDates(dateStr, todayStr) <= 0) {
         if (!p.lastFactureDate || compareDates(dateStr, p.lastFactureDate) > 0) {
           nonFact++;
@@ -747,15 +748,24 @@ function renderFactureList() {
     return { ...p, nonFact };
   }).filter(p => p.nonFact > 0);
 
+  // Tri : plus de nonFact d'abord, puis alpha
   all.sort((a,b) => {
     if (b.nonFact !== a.nonFact) return b.nonFact - a.nonFact;
     return (a.nom + " " + a.prenom).localeCompare(b.nom + " " + b.prenom);
   });
 
+  // Affichage avec codes couleurs "comme avant"
   all.forEach(p => {
     const li = document.createElement("li");
     li.textContent = `${p.nom} ${p.prenom} (${p.nonFact})`;
-    // garde ton styling existant ici si tu veux
+
+    // Codes couleurs (texte) restaurés
+    if (p.nonFact > 20)      li.style.color = "red";
+    else if (p.nonFact >= 10) li.style.color = "orange";
+    else if (p.nonFact >= 5)  li.style.color = "yellow";
+    else if (p.nonFact >= 2)  li.style.color = "green";
+    else                      li.style.color = "skyblue";
+
     ul.appendChild(li);
   });
 }
