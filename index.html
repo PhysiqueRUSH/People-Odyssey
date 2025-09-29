@@ -749,7 +749,7 @@
         ul.appendChild(li);
       });
     }
-          // --- OCR Doctolib ---
+    // --- OCR Doctolib ---
     async function processOcrFiles() {
       const files = [
         document.getElementById("ocr-file-1").files[0],
@@ -776,15 +776,17 @@
       showOcrResults(cleaned);
     }
 
+    // Nettoyage du texte OCR (plus tolérant)
     function cleanOcrText(text) {
       return text
         .split("\n")
+        .map(l => l.replace(/\d{1,2}[:h]\d{2}/g,""))       // supprime heures type 08:45
+        .map(l => l.replace(/\d{1,2}\/\d{1,2}\/\d{2,4}/g,"")) // supprime dates type 29/09/2025
+        .map(l => l.replace(/[|@+]/g," "))                 // supprime symboles parasites
         .map(l => l.trim())
-        .filter(l => l.length > 1)
-        .filter(l => !/^[0-9:\/\-\s]+$/.test(l)) // enlever heures/dates
-        .filter(l => !/\b(Ans|Bon|pan|rdv|consultation)\b/i.test(l)) // enlever bruits
-        .filter(l => /^[A-ZÉÈÊËÀÂÄÎÏÔÖÛÜÇ][A-ZÉÈÊËÀÂÄÎÏÔÖÛÜÇ\- ]+ [A-ZÉÈÊËÀÂÄÎÏÔÖÛÜÇa-zéèêëàâäîïôöûüç\-]+$/.test(l)) // NOM Prénom
-        ;
+        .filter(l => l.length > 2)
+        .filter(l => /\s/.test(l)) // au moins deux mots
+        .filter(l => /[A-ZÉÈÊËÀÂÄÎÏÔÖÛÜÇ]{2,}/.test(l)); // contient un nom avec majuscules
     }
 
     function showOcrResults(lines) {
@@ -839,6 +841,7 @@
       showMainScreen();
     });
 
+    // Fonction de similarité floue (Levenshtein)
     function similarity(s1, s2) {
       s1 = s1.toLowerCase(); s2 = s2.toLowerCase();
       let longer = s1.length > s2.length ? s1 : s2;
@@ -872,6 +875,7 @@
       }
       return costs[s2.length];
     }
+      
           // --- Téléphone & SMS ---
     function normalizePhone(num) {
       return (num || "").replace(/\s+/g, "");
