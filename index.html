@@ -1380,7 +1380,7 @@ function normalizeOcrName(line) {
   const firstname = first.join(" ");
 
   // Filtre final : longueur minimale
-  if (surname.length < 2 || firstname.length < 2) return null;
+  if (surname.length < 3 || firstname.length < 3) return null;
 
   return `${surname} ${firstname}`;
 }
@@ -1721,44 +1721,31 @@ function renderAddOcrResults(lines) {
     return;
   }
 
-  // Tous les patients déjà enregistrés (pour savoir qui est "nouveau")
+  // Patients existants pour détecter les "nouveaux"
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const existingKeys = new Set(patients.map(p => keyName(p.nom, p.prenom)));
 
-  // Noms OCR uniques (ex: ['DURAND Paul', 'MARTIN Léa', ...])
+  // Dédupe
   const unique = Array.from(new Set(lines));
 
-  const ul = document.createElement("ul");
-  ul.className = "ocr-list";
-
-  unique.forEach((fullName, idx) => {
-    // ← ICI : sécuriser le split et ignorer les lignes suspectes
+  const ul = document.createElement("ul"); // ⬅️ pas de classe, comme l’écran "Prévus"
+  unique.forEach(fullName => {
     const parts = fullName.trim().split(/\s+/);
-    if (parts.length < 2) return; // saute cet élément et continue la boucle
+    if (parts.length < 2) return; // saute les lignes suspectes
 
-    // Sépare NOM / Prénom pour calculer la clé normalisée
-    const nom = (parts[0] || "").trim();
-    const prenom = (parts.slice(1).join(" ") || "").trim();
+    const nom = parts[0];
+    const prenom = parts.slice(1).join(" ");
     const k = keyName(nom, prenom);
-
-    const isNew = !existingKeys.has(k);  // nouveau si pas déjà dans la base
+    const isNew = !existingKeys.has(k);
 
     const li = document.createElement("li");
-
-    const id = "addocr_" + idx;
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.id = id;
     cb.value = fullName;
-    cb.checked = isNew;                  // cochée seulement si "nouveau"
-
-    const label = document.createElement("label");
-    label.className = "ocr-name" + (isNew ? "" : " exists");
-    label.setAttribute("for", id);
-    label.textContent = isNew ? fullName : (fullName + " (existe déjà)");
+    cb.checked = isNew; // ✅ seulement les nouveaux sont cochés
 
     li.appendChild(cb);
-    li.appendChild(label);
+    li.appendChild(document.createTextNode(" " + fullName)); // ⬅️ texte simple, comme "Prévus"
     ul.appendChild(li);
   });
 
