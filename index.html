@@ -1599,24 +1599,6 @@ function renderAddOcrResults(lines) {
 }
 
 
-  // dédup interne
-  const unique = Array.from(new Set(lines));
-
-  const ul = document.createElement("ul");
-  unique.forEach(l => {
-    const li = document.createElement("li");
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.checked = true;
-    cb.value = l;
-    li.appendChild(cb);
-    li.appendChild(document.createTextNode(" " + l));
-    ul.appendChild(li);
-  });
-  zone.appendChild(ul);
-  document.getElementById("add-ocr-import-btn").style.display = "inline-block";
-}
-
 function importAddOcrSelection() {
   const zone = document.getElementById("add-ocr-results");
   const cbs = zone.querySelectorAll("input[type=checkbox]:checked");
