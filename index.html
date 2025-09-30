@@ -1711,13 +1711,16 @@ function renderAddOcrResults(lines) {
   ul.className = "ocr-list";
 
   unique.forEach((fullName, idx) => {
+    // ← ICI : sécuriser le split et ignorer les lignes suspectes
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length < 2) return; // saute cet élément et continue la boucle
+
     // Sépare NOM / Prénom pour calculer la clé normalisée
-    const parts = fullName.split(" ");
     const nom = (parts[0] || "").trim();
     const prenom = (parts.slice(1).join(" ") || "").trim();
     const k = keyName(nom, prenom);
 
-    const isNew = !existingKeys.has(k);  // ← nouveau si pas déjà dans la base
+    const isNew = !existingKeys.has(k);  // nouveau si pas déjà dans la base
 
     const li = document.createElement("li");
 
@@ -1726,12 +1729,11 @@ function renderAddOcrResults(lines) {
     cb.type = "checkbox";
     cb.id = id;
     cb.value = fullName;
-    cb.checked = isNew;                  // ← cochée seulement si "nouveau"
+    cb.checked = isNew;                  // cochée seulement si "nouveau"
 
     const label = document.createElement("label");
     label.className = "ocr-name" + (isNew ? "" : " exists");
     label.setAttribute("for", id);
-    // Si tu ne veux pas l’indication, supprime la partie " (existe déjà)"
     label.textContent = isNew ? fullName : (fullName + " (existe déjà)");
 
     li.appendChild(cb);
