@@ -35,6 +35,20 @@
     .search-bar { display: flex; margin-bottom: .5rem; }
     .search-bar input { flex: 1; padding: .6rem; border:none; border-radius:6px; }
     .actions { display:flex; justify-content:space-between; margin-bottom:1rem; }
+
+.count-chip{
+  background:#112b55;
+  border:1px solid #274b8a;
+  padding:.4rem .8rem;
+  border-radius:999px;
+  font-weight:bold;
+  min-width:3rem;
+  text-align:center;
+  align-self:center;
+}
+.actions { gap: .6rem; } /* un petit espace entre les 3 éléments */
+
+    
     .actions button, .bottom-actions button { 
       background:#1f3f7a; 
       border:none; 
@@ -95,6 +109,34 @@
       justify-content: space-between;
       padding: 0 1rem;
     }
+
+/* Liste OCR (écran d'ajout) */
+.ocr-list {
+  list-style:none;
+  padding:0;
+  margin:.5rem 0;
+}
+.ocr-list li{
+  display:flex;
+  align-items:center;
+  gap:.6rem;
+  background:#112b55;
+  border:1px solid #274b8a;
+  padding:.5rem .7rem;
+  border-radius:8px;
+  margin-bottom:.4rem;
+}
+.ocr-name{
+  flex:1;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.ocr-list input[type="checkbox"]{
+  transform: scale(1.2);
+}
+
+    
     /* Menu patient */
     #patient-menu {
       display: none;
@@ -231,10 +273,15 @@
 </div>
  
 
-    <div class="actions">
-      <button onclick="showAddScreen()">+</button>
-      <button onclick="showOcrScreen()">Captures Doctolib</button>
-    </div>
+<div class="actions">
+  <button onclick="showAddScreen()">➕🙋‍♂️/🙋‍♀️</button>
+
+  <!-- Compteur total (au centre) — on le stylisera plus bas -->
+  <span id="patientCount" class="count-chip">0</span>
+
+  <button onclick="showOcrScreen()">📸Prévus🧾</button>
+</div>
+
 
     <ul class="patient-list" id="patientList"></ul>
 
@@ -372,6 +419,10 @@
   <!-- Écran patients d'une journée -->
   <div id="day-screen" class="container">
     <h3 id="day-title"></h3>
+    <div class="search-bar" style="margin-top:.4rem;">
+  <input type="text" id="daySearchInput" placeholder="Rechercher parmi les présents...">
+  <button id="daySortToggleBtn" title="Changer l'ordre" style="margin-left:.4rem;" onclick="cycleDaySortMode()">↕️</button>
+</div>
     <ul id="day-patient-list"></ul>
     <button class="back-btn" onclick="showCalendar()">↩ Retour</button>
   </div>
@@ -483,6 +534,10 @@ function sortPatients(arr) {
 function renderPatients(filter = "") {
   const all = JSON.parse(localStorage.getItem("patients") || "[]");
   patientListEl.innerHTML = "";
+  // met à jour le total global de patients (non filtré)
+const countEl = document.getElementById("patientCount");
+if (countEl) countEl.textContent = all.length;
+
 
   // Conserve l'index original i (sert pour les tris par ordre d'ajout)
   let rows = all
@@ -866,30 +921,71 @@ function closeMenuAndShowFactureList(mode) {
         "Présents le " + dateStr + " — " + total + " patient(s)";
     }
 
-    function renderDayPatients(dateStr) {
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      dayPatientList.innerHTML = "";
-      patients.forEach((p, idx) => {
-        if (p.presences && p.presences.includes(dateStr)) {
-          const li = document.createElement("li");
-          const delBtn = document.createElement("button");
-          delBtn.textContent = "🗑️";
-          delBtn.className = "delete-btn";
-          delBtn.onclick = () => {
-            p.presences = p.presences.filter(d => d !== dateStr);
-            patients[idx] = p;
-            localStorage.setItem("patients", JSON.stringify(patients));
-            renderDayPatients(dateStr);
-            updateDayTitle(dateStr);
-          };
-          li.appendChild(delBtn);
-          const span = document.createElement("span");
-          span.textContent = p.nom + " " + p.prenom;
-          li.appendChild(span);
-          dayPatientList.appendChild(li);
-        }
-      });
-    }
+// Tri du day-screen
+let daySortMode = "AZ"; // A→Z par défaut
+
+function cycleDaySortMode() {
+  daySortMode = daySortMode === "AZ" ? "ADDED_OLD"
+              : daySortMode === "ADDED_OLD" ? "ZA"
+              : daySortMode === "ZA" ? "ADDED_NEW"
+              : "AZ";
+  if (currentDayView) renderDayPatients(currentDayView);
+}
+
+// utilitaire de tri paramétrable (réutilise la logique de l'écran principal)
+function sortPatientsByMode(rows, mode) {
+  const byNameAsc  = (a,b) => (a.p.nom + " " + a.p.prenom).localeCompare(b.p.nom + " " + b.p.prenom, 'fr', {sensitivity:'base'});
+  const byIndexAsc = (a,b) => a.i - b.i;
+
+  const copy = rows.slice();
+  if (mode === "AZ") copy.sort(byNameAsc);
+  else if (mode === "ZA") copy.sort((a,b) => -byNameAsc(a,b));
+  else if (mode === "ADDED_OLD") copy.sort(byIndexAsc);
+  else if (mode === "ADDED_NEW") copy.sort((a,b) => -byIndexAsc(a,b));
+  return copy;
+}
+
+      
+   function renderDayPatients(dateStr) {
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const q = (document.getElementById("daySearchInput")?.value || "").toLowerCase();
+
+  // Construire rows {p, i} pour ceux présents ce jour
+  let rows = patients
+    .map((p, i) => ({ p, i }))
+    .filter(({p}) => p.presences && p.presences.includes(dateStr))
+    .filter(({p}) => (p.nom + " " + p.prenom).toLowerCase().includes(q));
+
+  // Appliquer le tri selon daySortMode
+  rows = sortPatientsByMode(rows, daySortMode);
+
+  dayPatientList.innerHTML = "";
+  rows.forEach(({p, i}) => {
+    const li = document.createElement("li");
+    const delBtn = document.createElement("button");
+    delBtn.textContent = "🗑️";
+    delBtn.className = "delete-btn";
+    delBtn.onclick = () => {
+      p.presences = p.presences.filter(d => d !== dateStr);
+      patients[i] = p;
+      localStorage.setItem("patients", JSON.stringify(patients));
+      renderDayPatients(dateStr);
+      updateDayTitle(dateStr);
+    };
+    li.appendChild(delBtn);
+    const span = document.createElement("span");
+    span.textContent = p.nom + " " + p.prenom;
+    li.appendChild(span);
+    dayPatientList.appendChild(li);
+  });
+
+  // écouteur de saisie (une seule fois)
+  const inp = document.getElementById("daySearchInput");
+  if (inp && !inp.__bound) {
+    inp.addEventListener("input", () => renderDayPatients(dateStr));
+    inp.__bound = true;
+  }
+}
 
     // --- Facturation ---
     function saveLastFactureDate() {
@@ -1094,45 +1190,52 @@ function showFactureList(filterMode) {
 }
 
 // Extrait strictement "NOM Prénom" à partir d'une ligne
+// Extrait strictement "NOM Prénom" à partir d'une ligne OCR
 function normalizeOcrName(line) {
   if (!line) return null;
 
-  // Tokenise en conservant accents et tirets
+  // Tokenisation en conservant accents, tirets et apostrophes
   const tokens = line.split(/\s+/).filter(Boolean);
 
-  // Sépare les tokens UPPERCASE (NOM) des tokens Prénom (Capitalisés)
+  // Séparer les tokens UPPERCASE (NOM) et les tokens Capitalisés (Prénom)
   const up = [];
-  const first = [];
+  let first = [];
 
   for (const t of tokens) {
     const hasLetter = /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(t);
     if (!hasLetter) continue;
 
     const isUpper = t === t.toUpperCase() && t.length >= 2;
-    const isCap   = /^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ'’-]+$/.test(t); // Prénom capitalisé, accents ok
+    const isCap   = /^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ'’-]+$/.test(t); // Prénom capitalisé (accents ok)
 
     if (isUpper) up.push(t);
     else if (isCap) first.push(t);
   }
 
+  // Exclure explicitement "Bon" détecté comme prénom (ex: "DESUERT Bon Valérie" → "DESUERT Valérie")
+  first = first.filter(tok => tok.toLowerCase() !== "bon");
+
+  // Il faut au moins un NOM (upper) et au moins un Prénom (capitalisé)
   if (up.length === 0 || first.length === 0) return null;
 
-  // Cas "NOM NOM Prénom" → si doublon initial exact, on compacte
-  // ex: DUPONT DUPONT Pierre → DUPONT Pierre
+  // Cas "NOM NOM Prénom" : si les deux premiers NOM sont identiques (ignorer tirets/’)
+  // on compacte en ne gardant qu'un seul NOM.
   let surname = up[0];
-  if (up.length >= 2 && up[0].replace(/[-’']/g,"") === up[1].replace(/[-’']/g,"")) {
-    surname = up[0]; // garde un seul
+  if (up.length >= 2) {
+    const n1 = up[0].replace(/[-’']/g, "");
+    const n2 = up[1].replace(/[-’']/g, "");
+    if (n1 === n2) surname = up[0];
   }
 
-  // Si plusieurs NOM différents détectés (ligne bavarde), on prend le premier bloc UPPER plausible
-  // et on ignore le reste pour rester strict.
+  // Prénom = concaténation des tokens capitalisés restants
   const firstname = first.join(" ");
 
-  // Filtre final : NOM = 2+ lettres, Prénom = 2+ lettres
+  // Filtre final : longueur minimale
   if (surname.length < 2 || firstname.length < 2) return null;
 
   return `${surname} ${firstname}`;
 }
+
 
 
     function showOcrResults(lines) {
@@ -1468,6 +1571,33 @@ function renderAddOcrResults(lines) {
     zone.innerHTML = "<p>Aucun patient détecté.</p>";
     return;
   }
+
+  const unique = Array.from(new Set(lines));
+
+  const ul = document.createElement("ul");
+  ul.className = "ocr-list";
+
+  unique.forEach(l => {
+    const li = document.createElement("li");
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = true;
+    cb.value = l;
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "ocr-name";
+    nameEl.textContent = l; // NOM Prénom
+
+    li.appendChild(cb);
+    li.appendChild(nameEl);
+    ul.appendChild(li);
+  });
+
+  zone.appendChild(ul);
+  document.getElementById("add-ocr-import-btn").style.display = "inline-block";
+}
+
 
   // dédup interne
   const unique = Array.from(new Set(lines));
