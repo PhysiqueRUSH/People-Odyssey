@@ -242,8 +242,7 @@
   0%   { box-shadow: 0 0 0px 0 rgba(255,255,255,.6); }
   50%  { box-shadow: 0 0 12px 3px rgba(255,255,255,.85); }
   100% { box-shadow: 0 0 0px 0 rgba(255,255,255,.6); }
-}
-.pin-blink { animation: glow 1.2s infinite; }
+}.pin-blink { animation: glow 1.2s infinite; }
 
 /* OCR Ajout — identique à Prévus */
 #add-ocr-results ul {
@@ -259,14 +258,21 @@
   border: 0;
   background: transparent;
   color: inherit;
+  line-height: 1.4;
 }
 
 #add-ocr-results input[type="checkbox"] {
   vertical-align: middle; /* case et texte alignés */
   margin-right: .45rem;   /* petit espace entre case et texte */
+  position: relative;
+  left: 0;                /* annule tout margin-left:auto */
 }
-    
-  </style>
+
+#add-ocr-results label {
+  vertical-align: middle;
+}
+</style>
+  
 </head>
 <body>
   <header>
