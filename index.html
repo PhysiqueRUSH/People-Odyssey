@@ -48,6 +48,9 @@
 }
 .actions { gap: .6rem; } /* un petit espace entre les 3 éléments */
 
+    #row-top, #row-second { align-items: center; }
+#row-second .count-chip { text-align: center; margin: 0 .2rem; }
+
     
     .actions button, .bottom-actions button { 
       background:#1f3f7a; 
@@ -271,27 +274,21 @@
 </div>
 
 
-   <div style="display:flex; justify-content:center; margin:.4rem 0;">
-  <button id="pinButton" class="pin-btn" title="Liste spéciale" onclick="showSpecialList()">📌</button>
-</div>
- 
-
-<div class="actions">
+<!-- Rangée 1 : +  |  📌  |  📸Prévus🧾 -->
+<div class="actions" id="row-top">
   <button onclick="showAddScreen()">➕🙋‍♂️/🙋‍♀️</button>
-
-  <!-- Compteur total (au centre) — on le stylisera plus bas -->
-  <span id="patientCount" class="count-chip">0</span>
-
+  <button id="pinButton" class="pin-btn" title="Liste spéciale" onclick="showSpecialList()">📌</button>
   <button onclick="showOcrScreen()">📸Prévus🧾</button>
 </div>
 
+<!-- Rangée 2 : Calendrier |  [XX patients]  | À facturer -->
+<div class="actions" id="row-second">
+  <button onclick="showCalendar()">Calendrier</button>
+  <span id="patientCount" class="count-chip">0 patients</span>
+  <button onclick="showFactureScreen()">À facturer</button>
+</div>
 
     <ul class="patient-list" id="patientList"></ul>
-
-    <div class="bottom-actions">
-      <button onclick="showCalendar()">Calendrier</button>
-      <button onclick="showFactureScreen()">À facturer</button>
-    </div>
   </div>
 
   <!-- Écran ajout patient -->
@@ -407,6 +404,17 @@
       <div>Lun</div><div>Mar</div><div>Mer</div><div>Jeu</div><div>Ven</div><div>Sam</div><div>Dim</div>
     </div>
     <div class="calendar-grid" id="presence-grid"></div>
+    <hr style="opacity:.2;margin:.8rem 0;">
+<h4>Importer des dates depuis Doctolib (optionnel)</h4>
+<input type="file" id="pres-ocr-file-1" accept="image/*"><br>
+<input type="file" id="pres-ocr-file-2" accept="image/*"><br>
+<input type="file" id="pres-ocr-file-3" accept="image/*"><br>
+<input type="file" id="pres-ocr-file-4" accept="image/*"><br>
+<input type="file" id="pres-ocr-file-5" accept="image/*"><br>
+<button class="save-btn" id="pres-ocr-process-btn">🔍 Extraire dates</button>
+<div id="pres-ocr-results" style="margin:.6rem 0;"></div>
+<button class="save-btn" id="pres-ocr-import-btn" style="display:none;">✅ Ajouter sélection</button>
+
     <button class="save-btn" onclick="savePresenceSelection()">💾 Enregistrer</button>
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
@@ -539,7 +547,7 @@ function renderPatients(filter = "") {
   patientListEl.innerHTML = "";
   // met à jour le total global de patients (non filtré)
 const countEl = document.getElementById("patientCount");
-if (countEl) countEl.textContent = all.length;
+if (countEl) countEl.textContent = `${all.length} patients`;
 
 
   // Conserve l'index original i (sert pour les tris par ordre d'ajout)
@@ -1172,6 +1180,123 @@ function showFactureList(filterMode) {
       showOcrResults(cleaned);
     }
 
+// ===== OCR "Présences" (dans l'écran Sélectionner les présences) =====
+const FR_MONTHS_ALLOWED = {
+  "janv.":1, "févr.":2, "fevr.":2,
+  "mars":3, "avr.":4, "mai":5, "juin":6,
+  "juil.":7, "août":8, "aout":8,
+  "sept.":9, "oct.":10, "nov.":11, "déc.":12, "dec.":12
+};
+
+function normTxt(s){
+  return (s||"").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/\s+/g," ").trim();
+}
+
+// Ex: "mar. 25 sept. 2025" ou "lun. 3 mai 2025"
+function extractPresenceDates(text){
+  const results = [];
+  const seen = new Set();
+  const re = /(lun|mar|mer|jeu|ven|sam|dim)\.\s+(\d{1,2})\s+([A-Za-zÀ-ÖØ-öø-ÿ\.]+)\s+(\d{4})/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const dayNum = parseInt(m[2], 10);
+    const keyMonth = normTxt(m[3].trim());
+    const yearNum = parseInt(m[4], 10);
+    if (!(keyMonth in FR_MONTHS_ALLOWED)) continue;
+    const mm = FR_MONTHS_ALLOWED[keyMonth];
+    if (dayNum < 1 || dayNum > 31) continue;
+    const dd = String(dayNum).padStart(2,"0");
+    const MM = String(mm).padStart(2,"0");
+    const yyyy = String(yearNum);
+    const dateStr = `${dd}/${MM}/${yyyy}`;
+    if (!seen.has(dateStr)) { seen.add(dateStr); results.push(dateStr); }
+  }
+  results.sort((a,b)=>{
+    const [ja,ma,aa]=a.split("/").map(Number);
+    const [jb,mb,ab]=b.split("/").map(Number);
+    return new Date(aa,ma-1,ja) - new Date(ab,mb-1,jb);
+  });
+  return results;
+}
+
+async function processPresenceOcrFiles(){
+  const files = [
+    document.getElementById("pres-ocr-file-1").files[0],
+    document.getElementById("pres-ocr-file-2").files[0],
+    document.getElementById("pres-ocr-file-3").files[0],
+    document.getElementById("pres-ocr-file-4").files[0],
+    document.getElementById("pres-ocr-file-5").files[0],
+  ].filter(Boolean);
+  if (files.length === 0){ alert("Sélectionne au moins une capture Doctolib."); return; }
+
+  const zone = document.getElementById("pres-ocr-results");
+  const btnImport = document.getElementById("pres-ocr-import-btn");
+  zone.innerHTML = "🔍 OCR en cours...";
+  btnImport.style.display = "none";
+
+  let raw = "";
+  for (const f of files){
+    const { data:{ text } } = await Tesseract.recognize(f, "fra");
+    raw += "\n" + text;
+  }
+  const dates = extractPresenceDates(raw);
+  showPresenceOcrResults(dates);
+}
+
+function showPresenceOcrResults(dates){
+  const zone = document.getElementById("pres-ocr-results");
+  zone.innerHTML = "";
+  if (!dates || dates.length === 0){
+    zone.innerHTML = "<p>Aucune date valide trouvée.</p>";
+    return;
+  }
+  const ul = document.createElement("ul");
+  ul.className = "ocr-list";
+  dates.forEach((d, idx)=>{
+    const li = document.createElement("li");
+    const id = "presocr_"+idx;
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.id = id; cb.value = d; cb.checked = true;
+    const label = document.createElement("label");
+    label.className = "ocr-name"; label.setAttribute("for", id); label.textContent = d;
+    li.appendChild(cb); li.appendChild(label); ul.appendChild(li);
+  });
+  zone.appendChild(ul);
+  document.getElementById("pres-ocr-import-btn").style.display = "inline-block";
+}
+
+function importPresenceDatesChecked(){
+  if (selectedPatientIndex === null) return;
+  const zone = document.getElementById("pres-ocr-results");
+  const cbs = zone.querySelectorAll("input[type=checkbox]:checked");
+  const chosen = Array.from(cbs).map(cb => cb.value);
+  if (chosen.length === 0){ alert("Coche au moins une date à ajouter."); return; }
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex] || { presences:[] };
+  let changed = false;
+
+  chosen.forEach(dateStr=>{
+    if (!p.presences.includes(dateStr)){
+      p.presences.push(dateStr);
+      presenceSelection.add(dateStr);
+      changed = true;
+    }
+  });
+
+  if (changed){
+    patients[selectedPatientIndex] = p;
+    localStorage.setItem("patients", JSON.stringify(patients));
+    renderPresenceCalendar();
+  }
+  alert("Import de dates terminé.");
+  document.getElementById("pres-ocr-import-btn").style.display = "none";
+  document.getElementById("pres-ocr-results").innerHTML = "";
+}
+
+      
     // Nettoyage du texte OCR 
     function cleanOcrText(text) {
   // 1) Nettoyage large des lignes
@@ -1676,6 +1801,10 @@ function importAddOcrSelection() {
 
     // --- Recherche dynamique ---
     searchInput.addEventListener("input", () => renderPatients(searchInput.value));
+
+document.getElementById("pres-ocr-process-btn").addEventListener("click", processPresenceOcrFiles);
+document.getElementById("pres-ocr-import-btn").addEventListener("click", importPresenceDatesChecked);
+
 
    // --- Init ---
 showToday();
