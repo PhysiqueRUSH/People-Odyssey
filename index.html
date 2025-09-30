@@ -123,43 +123,6 @@
 }
 
     
-/* Liste OCR (écran d'ajout) — alignement propre texte/checkbox */
-.ocr-list{
-  list-style-type:none;     /* pas de puces */
-  padding-left:0;           /* supprime le retrait natif des <ul> */
-  margin:.5rem 0;
-}
-.ocr-list li{
-  display:flex;
-  align-items:center;
-  gap:.8rem;
-  justify-content:flex-start;     /* pousse la case à droite */
-  background:#112b55;
-  border:1px solid #274b8a;
-  padding:.55rem .8rem;
-  border-radius:8px;
-  margin-bottom:.4rem;
-  color:#fff;
-  min-height:44px;
-}
-.ocr-list li::marker{ content:''; }   /* sécurité anti-puces */
-
-.ocr-name{
-  flex:1;                 /* prend toute la largeur dispo */
-  min-width:0;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  font-weight:600;
-}
-
-/* case à cocher bien alignée à droite */
-.ocr-checkbox{
-  flex:0 0 auto;
-  margin-left:auto;                   /* ⬅️ pousse la case tout à droite */
-  transform:scale(1.2);
-}
-
 /* style facultatif si le patient existe déjà */
 .ocr-name.exists{
   opacity:.7;
@@ -1760,15 +1723,15 @@ function renderAddOcrResults(lines) {
     return;
   }
 
-  // Pour cocher seulement les nouveaux
+  // Patients déjà existants → pour savoir qui est nouveau
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const existingKeys = new Set(patients.map(p => keyName(p.nom, p.prenom)));
 
   const ul = document.createElement("ul");
-  ul.className = "ocr-list";
   let any = false;
 
-  Array.from(new Set(lines)).forEach((fullName, idx) => {
+  // Déduplication simple
+  Array.from(new Set(lines)).forEach(fullName => {
     const parts = String(fullName || "").trim().split(/\s+/);
     if (parts.length < 2) return;
 
@@ -1779,26 +1742,17 @@ function renderAddOcrResults(lines) {
     const isNew = !existingKeys.has(keyName(surname, firstname));
 
     const li = document.createElement("li");
-
-    // Texte cliquable à gauche
-    const label = document.createElement("label");
-    label.className = "ocr-name" + (isNew ? "" : " exists");
-    const id = "addocr_" + idx;
-    label.setAttribute("for", id);
-    label.textContent = isNew
-      ? `${surname} ${firstname}`
-      : `${surname} ${firstname} (existe déjà)`;
-
-    // Checkbox à droite
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.id = id;
     cb.value = `${surname} ${firstname}`;
-    cb.checked = isNew;
-    cb.className = "ocr-checkbox";
+    cb.checked = isNew; // ✅ Seulement les nouveaux cochés
 
-    li.appendChild(label);
     li.appendChild(cb);
+    const span = document.createElement("span");
+span.textContent = " " + surname + " " + firstname;
+if (!isNew) span.className = "ocr-name exists"; // applique ton style CSS
+li.appendChild(span);
+
     ul.appendChild(li);
     any = true;
   });
@@ -1812,7 +1766,6 @@ function renderAddOcrResults(lines) {
   zone.appendChild(ul);
   if (btnImport) btnImport.style.display = "inline-block";
 }
-
 
 
 function importAddOcrSelection() {
