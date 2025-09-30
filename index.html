@@ -85,14 +85,18 @@
 #facturation-date-screen, #special-screen, #patient-sessions-screen { 
   display:none; padding:1rem; 
 }
-    #add-screen input, #info-screen input, #info-screen textarea, 
-    #presence-date-screen input, #facturation-date-screen input { 
-      width:100%; 
-      margin-bottom:.8rem; 
-      padding:.6rem; 
-      border:none; 
-      border-radius:6px; 
-    }
+    #add-screen input:not([type="checkbox"]),
+#info-screen input:not([type="checkbox"]),
+#presence-date-screen input:not([type="checkbox"]),
+#facturation-date-screen input:not([type="checkbox"]),
+#info-screen textarea {
+  width:100%;
+  margin-bottom:.8rem;
+  padding:.6rem;
+  border:none;
+  border-radius:6px;
+}
+
     .save-btn { background:#28a745; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; margin-right:.5rem; }
     .back-btn { background:#6c757d; border:none; padding:.6rem 1.2rem; border-radius:6px; color:white; cursor:pointer; }
     .delete-btn {
@@ -265,6 +269,16 @@
 #add-ocr-results label {
   vertical-align: middle;
 }
+
+#add-ocr-results li { 
+  cursor: pointer; 
+  user-select: none; 
+}
+
+#add-ocr-results input[type="checkbox"] { 
+  width: auto;  /* sécurité si une règle globale force une largeur */
+}
+    
 </style>
   
 </head>
