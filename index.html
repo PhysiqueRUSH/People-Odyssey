@@ -113,6 +113,16 @@
       padding: 0 1rem;
     }
 
+
+.facture-estimate{
+  font-size: 0.95rem;   /* légèrement moins gros que le titre */
+  font-style: italic;
+  color: #ddd;
+  margin-top: .2rem;
+  margin-bottom: .6rem;
+}
+
+    
 /* Liste OCR (écran d'ajout) */
 .ocr-list {
   list-style:none;
@@ -332,6 +342,7 @@
   <!-- Écran "À facturer" -->
   <div id="facture-screen" class="container">
     <h3 id="facture-title">Patients avec séances non facturées</h3>
+    <div id="facture-estimate" class="facture-estimate"></div>
     <ul id="facture-list"></ul>
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
@@ -1061,6 +1072,13 @@ function renderFactureList() {
   if (titleEl) {
     titleEl.textContent = `Patients avec séances non facturées (${totalGlobal})`;
   }
+  // Affiche "soit environ xxxx € à récupérer"
+const estimateEl = document.getElementById("facture-estimate");
+if (estimateEl) {
+  const euros = Math.round(totalGlobal * 18.2);
+  estimateEl.textContent = `soit environ ${euros.toLocaleString('fr-FR')} € à récupérer`;
+}
+
 
   // Tri : plus de nonFact d'abord, puis alpha
   all.sort((a,b) => {
@@ -1068,19 +1086,22 @@ function renderFactureList() {
     return (a.nom + " " + a.prenom).localeCompare(b.nom + " " + b.prenom);
   });
 
-  // Rendu avec codes couleurs "comme avant"
-  all.forEach(p => {
-    const li = document.createElement("li");
-    li.textContent = `${p.nom} ${p.prenom} (${p.nonFact})`;
+  // Rendu avec codes couleurs et symbole d’alerte si rejet renseigné
+all.forEach(p => {
+  const li = document.createElement("li");
+  li.textContent = `${p.nom} ${p.prenom} (${p.nonFact})`;
+  if (p.rejet && p.rejet.trim()) {
+    li.textContent += " ⚠️";
+  }
 
-    if (p.nonFact > 20)        li.style.color = "red";
-    else if (p.nonFact >= 10)  li.style.color = "orange";
-    else if (p.nonFact >= 5)   li.style.color = "yellow";
-    else if (p.nonFact >= 2)   li.style.color = "green";
-    else                       li.style.color = "skyblue";
+  if (p.nonFact > 20)        li.style.color = "red";
+  else if (p.nonFact >= 10)  li.style.color = "orange";
+  else if (p.nonFact >= 5)   li.style.color = "yellow";
+  else if (p.nonFact >= 2)   li.style.color = "green";
+  else                       li.style.color = "skyblue";
 
-    ul.appendChild(li);
-  });
+  ul.appendChild(li);
+});
 }
 
       // ====== Listes de séances d'un patient (facturées / non facturées / toutes) ======
