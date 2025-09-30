@@ -1761,21 +1761,26 @@ function renderAddOcrResults(lines) {
     const isNew = !existingKeys.has(keyName(surname, firstname));
 
     const li = document.createElement("li");
+
+    // Case à cocher
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.value = `${surname} ${firstname}`;
     cb.checked = isNew;
 
-const id = "addocr_" + Math.random().toString(36).slice(2);
-cb.id = id;
+    const id = "addocr_" + Math.random().toString(36).slice(2);
+    cb.id = id;
 
-const label = document.createElement("label");
-label.setAttribute("for", id);
-label.textContent = `${surname} ${firstname}`;
-if (!isNew) label.style.fontStyle = "italic";
+    // Texte lié à la checkbox
+    const label = document.createElement("label");
+    label.setAttribute("for", id);
+    label.textContent = `${surname} ${firstname}`;
+    if (!isNew) label.style.fontStyle = "italic";
 
-li.appendChild(cb);
-li.appendChild(label);
+    // ✅ On met la checkbox AVANT le texte (comme dans "Prévus")
+    li.appendChild(cb);
+    li.appendChild(label);
+
     ul.appendChild(li);
     any = true;
   });
