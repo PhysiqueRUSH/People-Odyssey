@@ -20,13 +20,11 @@
       background-color: #0b1d3a;
       color: white;
     }
-    header { 
-      padding: 1rem; 
-      text-align: center; 
-      background:#112b55; 
-      font-size: 1.3rem;
-      font-weight: bold;
-    }
+    header {
+  padding: 0;            /* plus de padding pour que l'image touche les bords */
+  text-align: center;
+  background: #112b55;
+}
     .container { padding: 1rem; }
     .today-date {
       font-size: 0.8rem;
@@ -45,6 +43,16 @@
       color:white; 
       cursor:pointer; 
     }
+
+.app-title-img {
+  display: block;
+  width: 100%;   /* prend toute la largeur disponible */
+  height: auto;  /* conserve les proportions de l'image */
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+    
     .patient-list { list-style:none; padding:0; margin-bottom: 3rem; }
     .patient-list li { 
       background:#16305a; 
@@ -57,7 +65,7 @@
     }
     #add-screen, #calendar-screen, #info-screen, #presence-screen, 
 #presence-date-screen, #day-screen, #facture-screen, #ocr-import-screen,
-#facturation-date-screen { 
+#facturation-date-screen, #special-screen { 
   display:none; padding:1rem; 
 }
     #add-screen input, #info-screen input, #info-screen textarea, 
@@ -178,6 +186,29 @@
       cursor: pointer;
     }
     .icon-btn:active { transform: scale(0.98); }
+
+    .pin-btn {
+  background:#1f3f7a;
+  border:2px solid #1f3f7a;
+  padding:.35rem .7rem;
+  border-radius:999px;
+  font-size:1.1rem;
+  cursor:pointer;
+}
+
+.pin-red    { background:#8b1e1e; border-color:#8b1e1e; color:#fff; }
+.pin-orange { background:#b15b00; border-color:#b15b00; color:#fff; }
+.pin-yellow { background:#7a6b00; border-color:#7a6b00; color:#fff; }
+.pin-green  { background:#218c3a; border-color:#218c3a; color:#fff; } /* vert clair */
+.pin-blue   { background:#005eff; border-color:#005eff; color:#fff; } /* bleu électrique */
+
+@keyframes glow {
+  0%   { box-shadow: 0 0 0px 0 rgba(255,255,255,.6); }
+  50%  { box-shadow: 0 0 12px 3px rgba(255,255,255,.85); }
+  100% { box-shadow: 0 0 0px 0 rgba(255,255,255,.6); }
+}
+.pin-blink { animation: glow 1.2s infinite; }
+
   </style>
 </head>
 <body>
@@ -192,6 +223,11 @@
     <div class="search-bar">
       <input type="text" id="searchInput" placeholder="Rechercher un patient...">
     </div>
+
+   <div style="display:flex; justify-content:center; margin:.4rem 0;">
+  <button id="pinButton" class="pin-btn" title="Liste spéciale" onclick="showSpecialList()">📌</button>
+</div>
+ 
 
     <div class="actions">
       <button onclick="showAddScreen()">+</button>
@@ -234,6 +270,17 @@
     <ul id="facture-list"></ul>
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
+
+  <!-- Écran Liste spéciale -->
+<div id="special-screen" class="container">
+  <h3 id="special-title">Liste spéciale</h3>
+  <ul class="patient-list" id="specialList"></ul>
+  <div class="bottom-actions">
+    <button onclick="showCalendar()">Calendrier</button>
+    <button onclick="showMainScreen()">↩ Retour</button>
+  </div>
+</div>
+
 
   <!-- Écran OCR import -->
   <div id="ocr-import-screen" class="container">
@@ -313,18 +360,20 @@
 
   <!-- Menu patient -->
   <div id="patient-menu">
-    <div class="menu-box">
-      <button onclick="showInfoScreen()">Informations</button>
-      <button onclick="addPresenceOffset(0)">Présent ce jour</button>
-      <button onclick="addPresenceOffset(1)">Présent demain</button>
-      <button onclick="addPresenceOffset(2)">Présent après-demain</button>
-      <button onclick="showPresenceSelection()">Sélectionner les présences</button>
-      <button onclick="showPresenceByDate()">Présent le ...</button>
-      <button onclick="showFactureList(true)">Liste séances facturées</button>
-      <button onclick="showFactureList(false)">Liste séances non facturées</button>
-      <button onclick="showFactureList()">Liste de toutes les séances</button>
-      <button onclick="showLastFactureScreen()">Date de la dernière facturation</button>
-    </div>
+<div class="menu-box">
+  <button onclick="showInfoScreen()">Informations</button>
+  <button onclick="addPresenceOffset(0)">Présent ce jour</button>
+  <button onclick="addPresenceOffset(1)">Présent demain</button>
+  <!-- SUPPRIMÉS: Présent après-demain / Présent le ... -->
+  <button onclick="showPresenceSelection()">Sélectionner les présences</button>
+  <button onclick="showFactureList(true)">Liste séances facturées</button>
+  <button onclick="showFactureList(false)">Liste séances non facturées</button>
+  <button onclick="showFactureList()">Liste de toutes les séances</button>
+  <button onclick="showLastFactureScreen()">Date de la dernière facturation</button>
+  <!-- AJOUTS -->
+  <button onclick="addToSpecialList()">Ajouter à la liste spéciale</button>
+  <button onclick="renfoDuSoir()">Renfo du soir</button>
+</div>
   </div>
     <script>
     const patientListEl = document.getElementById("patientList");
@@ -443,6 +492,7 @@ function mergeUniqueDates(a=[],b=[]){return Array.from(new Set([...a,...b]));}
       hideAll();
       document.getElementById("main-screen").style.display = "block";
       renderPatients(searchInput.value);
+      updatePinButton();
     }
     function showCalendar() {
       hideAll();
@@ -516,7 +566,7 @@ function mergeUniqueDates(a=[],b=[]){return Array.from(new Set([...a,...b]));}
     function hideAll() {
       ["main-screen","add-screen","calendar-screen","info-screen",
        "presence-screen","presence-date-screen","day-screen",
-       "facturation-date-screen","facture-screen","ocr-import-screen"]
+       "facturation-date-screen","facture-screen","ocr-import-screen","special-screen"]
        .forEach(id => { document.getElementById(id).style.display="none"; });
     }
           // --- Menu patient ---
@@ -1062,6 +1112,176 @@ function keyName(nom, prenom) {
       }
       return costs[s2.length];
     }
+
+// ====== LISTE SPÉCIALE (stockage et rendu) ======
+function getSpecialKeys() {
+  return JSON.parse(localStorage.getItem("specialList") || "[]"); // clés keyName
+}
+function setSpecialKeys(arr) {
+  localStorage.setItem("specialList", JSON.stringify(arr));
+}
+
+// Ajoute le patient courant (selectedPatientIndex) à la liste spéciale
+function addToSpecialList() {
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  if (!p) return;
+  const k = keyName(p.nom, p.prenom);
+  const keys = getSpecialKeys();
+  if (!keys.includes(k)) {
+    keys.push(k);
+    setSpecialKeys(keys);
+  }
+  updatePinButton();
+  alert(`${p.nom} ${p.prenom} ajouté à la liste spéciale.`);
+  patientMenu.style.display = "none";
+}
+
+// Compte non facturées (en ignorant le futur)
+function nonFactCount(p) {
+  const todayStr = formatDate(new Date());
+  let c = 0;
+  (p.presences || []).forEach(d => {
+    if (compareDates(d, todayStr) <= 0) {
+      if (!p.lastFactureDate || compareDates(d, p.lastFactureDate) > 0) c++;
+    }
+  });
+  return c;
+}
+
+// Met à jour la couleur + clignotement du bouton 📌
+function updatePinButton() {
+  const btn = document.getElementById("pinButton");
+  if (!btn) return;
+  btn.className = "pin-btn"; // reset classes
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const keys = getSpecialKeys();
+
+  let total = 0;
+  const todayStr = formatDate(new Date());
+  let anyTodayPresence = false;
+
+  keys.forEach(k => {
+    const p = patients.find(x => keyName(x.nom, x.prenom) === k);
+    if (!p) return;
+    total += nonFactCount(p);
+    if (p.presences && p.presences.includes(todayStr)) anyTodayPresence = true;
+  });
+
+  if (total > 40)        btn.classList.add("pin-red");
+  else if (total >= 30)  btn.classList.add("pin-orange");
+  else if (total >= 20)  btn.classList.add("pin-yellow");
+  else if (total >= 10)  btn.classList.add("pin-green");
+  else                   btn.classList.add("pin-blue");
+
+  if (!anyTodayPresence && keys.length > 0) btn.classList.add("pin-blink");
+}
+
+// Ouvre l'écran de liste spéciale
+function showSpecialList() {
+  hideAll();
+  document.getElementById("special-screen").style.display = "block";
+  renderSpecialList();
+}
+
+// Rendu de la liste spéciale (mêmes options/menus que la liste principale)
+function renderSpecialList() {
+  const listEl = document.getElementById("specialList");
+  listEl.innerHTML = "";
+  const keys = getSpecialKeys();
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+
+  const rows = keys.map(k => {
+    const i = patients.findIndex(x => keyName(x.nom, x.prenom) === k);
+    return i >= 0 ? { p: patients[i], i } : null;
+  }).filter(Boolean);
+
+  rows.forEach(({p, i}) => {
+    const li = document.createElement("li");
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.innerHTML = "🗑️";
+    deleteBtn.className = "delete-btn";
+    deleteBtn.onclick = (e) => {
+      e.stopPropagation();
+      deletePatient(i);    // supprime vraiment le patient
+      renderSpecialList(); // rafraîchir
+      updatePinButton();
+    };
+
+    const span = document.createElement("span");
+    span.textContent = p.nom + " " + p.prenom + (p.rejet && p.rejet.trim() ? " ⚠️" : "");
+
+    li.appendChild(deleteBtn);
+    li.appendChild(span);
+    li.onclick = () => showPatientMenu(i);
+    listEl.appendChild(li);
+  });
+
+  const total = rows.reduce((s, {p}) => s + nonFactCount(p), 0);
+  const titleEl = document.getElementById("special-title");
+  if (titleEl) titleEl.textContent = `Liste spéciale (${total})`;
+}
+
+// ====== RENFO DU SOIR ======
+// Ajoute 2 présences : (1) aujourd'hui, (2) jour ouvré de la semaine le moins chargé.
+// Si le patient est déjà présent ces jours, on choisit d'autres jours ouvrés les moins chargés.
+function renfoDuSoir() {
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  if (!p) return;
+
+  const today = new Date();
+  const todayStr = formatDate(today);
+
+  // Lundi de la semaine courante
+  const day = today.getDay(); // 0=Dim,1=Lun,...6=Sam
+  const monday = new Date(today);
+  const diffToMonday = (day === 0 ? -6 : 1) - day;
+  monday.setDate(today.getDate() + diffToMonday);
+
+  // 5 jours ouvrés (Lun→Ven)
+  const weekdays = [];
+  for (let k = 0; k < 5; k++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + k);
+    weekdays.push({ d, s: formatDate(d) });
+  }
+
+  // Classement par charge globale puis par date
+  const ranked = weekdays
+    .map(w => ({ ...w, load: countPresences(w.s) }))
+    .sort((a,b) => (a.load - b.load) || (a.d - b.d));
+
+  const toAdd = [];
+
+  // (1) Aujourd'hui si pas déjà présent
+  if (!p.presences.includes(todayStr)) toAdd.push(todayStr);
+
+  // (2) le jour ouvré le moins chargé, en évitant doublons
+  for (const w of ranked) {
+    if (toAdd.length >= 2) break;
+    if (!p.presences.includes(w.s) && !toAdd.includes(w.s)) toAdd.push(w.s);
+  }
+
+  // Si on n'a pas 2 dates (cas limites), prendre les suivants dispo
+  if (toAdd.length < 2) {
+    for (const w of ranked) {
+      if (toAdd.length >= 2) break;
+      if (!toAdd.includes(w.s) && !p.presences.includes(w.s)) toAdd.push(w.s);
+    }
+  }
+
+  toAdd.forEach(d => { if (!p.presences.includes(d)) p.presences.push(d); });
+
+  localStorage.setItem("patients", JSON.stringify(patients));
+  patientMenu.style.display = "none";
+
+  renderPatients(document.getElementById("searchInput").value);
+  updatePinButton();
+}
+
       
           // --- Téléphone & SMS ---
     function normalizePhone(num) {
@@ -1083,9 +1303,10 @@ function keyName(nom, prenom) {
     // --- Recherche dynamique ---
     searchInput.addEventListener("input", () => renderPatients(searchInput.value));
 
-    // --- Init ---
-    showToday();
-    renderPatients();
+   // --- Init ---
+showToday();
+showMainScreen();   // garantit un état propre
+updatePinButton();  // colore/clignote le 📌 dès le départ
   </script>
 </body>
 </html>
