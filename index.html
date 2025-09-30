@@ -133,7 +133,7 @@
   display:flex;
   align-items:center;
   gap:.8rem;
-  justify-content:space-between;      /* pousse la case à droite */
+  justify-content:flex-start;     /* pousse la case à droite */
   background:#112b55;
   border:1px solid #274b8a;
   padding:.55rem .8rem;
@@ -156,6 +156,7 @@
 /* case à cocher bien alignée à droite */
 .ocr-checkbox{
   flex:0 0 auto;
+  margin-left:auto;                   /* ⬅️ pousse la case tout à droite */
   transform:scale(1.2);
 }
 
@@ -1759,47 +1760,45 @@ function renderAddOcrResults(lines) {
     return;
   }
 
-  // Patients existants pour cocher seulement les "nouveaux"
+  // Pour cocher seulement les nouveaux
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const existingKeys = new Set(patients.map(p => keyName(p.nom, p.prenom)));
 
   const ul = document.createElement("ul");
-  ul.className = "ocr-list";                 // <= IMPORTANT pour le style et la suppression des puces
+  ul.className = "ocr-list";
   let any = false;
 
-  // déduplication
-  Array.from(new Set(lines)).forEach(fullName => {
+  Array.from(new Set(lines)).forEach((fullName, idx) => {
     const parts = String(fullName || "").trim().split(/\s+/);
-    if (parts.length < 2) return; // ignore si pas de prénom
+    if (parts.length < 2) return;
 
     const surname   = (parts[0] || "").trim();
     const firstname = (parts.slice(1).join(" ") || "").trim();
-
-    // filtre d’affichage : ignorer si < 3 caractères pour NOM ou Prénom (garde ta règle)
     if (surname.length < 3 || firstname.length < 3) return;
 
     const isNew = !existingKeys.has(keyName(surname, firstname));
 
     const li = document.createElement("li");
 
-    // TEXTE à gauche (span stylé)
-    const label = document.createElement("span");
+    // Texte cliquable à gauche
+    const label = document.createElement("label");
     label.className = "ocr-name" + (isNew ? "" : " exists");
+    const id = "addocr_" + idx;
+    label.setAttribute("for", id);
     label.textContent = isNew
       ? `${surname} ${firstname}`
       : `${surname} ${firstname} (existe déjà)`;
 
-    // CHECKBOX à droite
+    // Checkbox à droite
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.className = "ocr-checkbox";          // <= IMPORTANT pour l’alignement/tailles
+    cb.id = id;
     cb.value = `${surname} ${firstname}`;
-    cb.checked = isNew;                     // seulement les nouveaux cochés par défaut
+    cb.checked = isNew;
+    cb.className = "ocr-checkbox";
 
-    // ordre = label puis checkbox (le CSS met la case tout à droite)
     li.appendChild(label);
     li.appendChild(cb);
-
     ul.appendChild(li);
     any = true;
   });
@@ -1813,6 +1812,7 @@ function renderAddOcrResults(lines) {
   zone.appendChild(ul);
   if (btnImport) btnImport.style.display = "inline-block";
 }
+
 
 
 function importAddOcrSelection() {
