@@ -1723,14 +1723,12 @@ function renderAddOcrResults(lines) {
     return;
   }
 
-  // Patients déjà existants → pour savoir qui est nouveau
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const existingKeys = new Set(patients.map(p => keyName(p.nom, p.prenom)));
 
   const ul = document.createElement("ul");
   let any = false;
 
-  // Déduplication simple
   Array.from(new Set(lines)).forEach(fullName => {
     const parts = String(fullName || "").trim().split(/\s+/);
     if (parts.length < 2) return;
@@ -1745,14 +1743,14 @@ function renderAddOcrResults(lines) {
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.value = `${surname} ${firstname}`;
-    cb.checked = isNew; // ✅ Seulement les nouveaux cochés
+    cb.checked = isNew;
+
+    const label = document.createElement("span");
+    label.textContent = " " + surname + " " + firstname;
+    if (!isNew) label.style.fontStyle = "italic";
 
     li.appendChild(cb);
-    const span = document.createElement("span");
-span.textContent = " " + surname + " " + firstname;
-if (!isNew) span.className = "ocr-name exists"; // applique ton style CSS
-li.appendChild(span);
-
+    li.appendChild(label);
     ul.appendChild(li);
     any = true;
   });
