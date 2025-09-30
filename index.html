@@ -65,7 +65,7 @@
     }
     #add-screen, #calendar-screen, #info-screen, #presence-screen, 
 #presence-date-screen, #day-screen, #facture-screen, #ocr-import-screen,
-#facturation-date-screen, #special-screen { 
+#facturation-date-screen, #special-screen, #patient-sessions-screen { 
   display:none; padding:1rem; 
 }
     #add-screen input, #info-screen input, #info-screen textarea, 
@@ -221,8 +221,10 @@
   <div id="main-screen" class="container">
     <div class="today-date" id="todayDate"></div>
     <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="Rechercher un patient...">
-    </div>
+  <input type="text" id="searchInput" placeholder="Rechercher un patient...">
+  <button id="sortToggleBtn" title="Changer l'ordre" style="margin-left:.4rem;" onclick="cycleSortMode()">↕️</button>
+</div>
+
 
    <div style="display:flex; justify-content:center; margin:.4rem 0;">
   <button id="pinButton" class="pin-btn" title="Liste spéciale" onclick="showSpecialList()">📌</button>
@@ -270,6 +272,14 @@
     <ul id="facture-list"></ul>
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
+
+  <!-- Écran liste des séances du patient -->
+<div id="patient-sessions-screen" class="container" style="display:none;">
+  <h3 id="patient-sessions-title"></h3>
+  <ul id="patient-sessions-list"></ul>
+  <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+</div>
+
 
   <!-- Écran Liste spéciale -->
 <div id="special-screen" class="container">
@@ -426,15 +436,45 @@ function mergeUniqueDates(a=[],b=[]){return Array.from(new Set([...a,...b]));}
       });
       return count;
     }
-          // --- Gestion Patients ---
- function renderPatients(filter = "") {
+         
+   // ====== Tri des patients (écran principal) ======
+// Modes: "AZ" (par défaut), "ADDED_OLD", "ZA", "ADDED_NEW"
+let sortMode = "AZ";
+
+function cycleSortMode() {
+  sortMode = sortMode === "AZ" ? "ADDED_OLD"
+          : sortMode === "ADDED_OLD" ? "ZA"
+          : sortMode === "ZA" ? "ADDED_NEW"
+          : "AZ";
+  renderPatients(searchInput.value);
+}
+
+function sortPatients(arr) {
+  // arr = [{p, i}, ...] où i = index d'insertion (ordre de stockage actuel)
+  const byNameAsc = (a,b) => (a.p.nom + " " + a.p.prenom).localeCompare(b.p.nom + " " + b.p.prenom, 'fr', {sensitivity:'base'});
+  const byIndexAsc = (a,b) => a.i - b.i;
+
+  const copy = arr.slice();
+  if (sortMode === "AZ") copy.sort(byNameAsc);
+  else if (sortMode === "ZA") copy.sort((a,b) => -byNameAsc(a,b));
+  else if (sortMode === "ADDED_OLD") copy.sort(byIndexAsc);              // plus ancien en premier
+  else if (sortMode === "ADDED_NEW") copy.sort((a,b) => -byIndexAsc(a,b)); // plus récent en premier
+  return copy;
+}
+   
+      
+      // --- Gestion Patients ---
+function renderPatients(filter = "") {
   const all = JSON.parse(localStorage.getItem("patients") || "[]");
   patientListEl.innerHTML = "";
 
-  // Conserve l'index original i
-  const rows = all
+  // Conserve l'index original i (sert pour les tris par ordre d'ajout)
+  let rows = all
     .map((p, i) => ({ p, i }))
     .filter(({ p }) => (p.nom + " " + p.prenom).toLowerCase().includes(filter.toLowerCase()));
+
+  // Appliquer le tri selon sortMode
+  rows = sortPatients(rows);
 
   rows.forEach(({ p, i }) => {
     const li = document.createElement("li");
@@ -444,7 +484,7 @@ function mergeUniqueDates(a=[],b=[]){return Array.from(new Set([...a,...b]));}
     deleteBtn.className = "delete-btn";
     deleteBtn.onclick = (e) => {
       e.stopPropagation();
-      deletePatient(i); // ← utilise l'index original
+      deletePatient(i); // index original
     };
 
     const span = document.createElement("span");
@@ -454,7 +494,7 @@ function mergeUniqueDates(a=[],b=[]){return Array.from(new Set([...a,...b]));}
     li.appendChild(deleteBtn);
     li.appendChild(span);
 
-    li.onclick = () => showPatientMenu(i); // ← index original
+    li.onclick = () => showPatientMenu(i);
     patientListEl.appendChild(li);
   });
 }
@@ -566,7 +606,7 @@ function mergeUniqueDates(a=[],b=[]){return Array.from(new Set([...a,...b]));}
     function hideAll() {
       ["main-screen","add-screen","calendar-screen","info-screen",
        "presence-screen","presence-date-screen","day-screen",
-       "facturation-date-screen","facture-screen","ocr-import-screen","special-screen"]
+       "facturation-date-screen","facture-screen","ocr-import-screen","special-screen","patient-sessions-screen"]
        .forEach(id => { document.getElementById(id).style.display="none"; });
     }
           // --- Menu patient ---
@@ -901,6 +941,75 @@ function renderFactureList() {
   });
 }
 
+      // ====== Listes de séances d'un patient (facturées / non facturées / toutes) ======
+// filterMode: true = facturées, false = non facturées (<= aujourd'hui), undefined = toutes (inclut futur en bleu ciel)
+function showFactureList(filterMode) {
+  if (selectedPatientIndex === null) return;
+
+  hideAll();
+  document.getElementById("patient-sessions-screen").style.display = "block";
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  const ul = document.getElementById("patient-sessions-list");
+  const titleEl = document.getElementById("patient-sessions-title");
+  ul.innerHTML = "";
+
+  const todayStr = formatDate(new Date());
+  const last = p.lastFactureDate ? normalizeDate(p.lastFactureDate) : null;
+
+  // Toutes les présences triées chronologiquement ASC
+  const sessions = (p.presences || []).slice().sort((a,b) => {
+    const [ja,ma,aa]=a.split("/").map(Number);
+    const [jb,mb,ab]=b.split("/").map(Number);
+    return new Date(aa,ma-1,ja) - new Date(ab,mb-1,jb);
+  });
+
+  // Helper non facturées (en ignorant FUTUR)
+  const nonFactCount = sessions.reduce((cnt, d) => {
+    const isPastOrToday = compareDates(d, todayStr) <= 0;
+    const isNonFact = !last || compareDates(d, last) > 0;
+    return cnt + (isPastOrToday && isNonFact ? 1 : 0);
+  }, 0);
+
+  // Titre selon mode, avec (total non facturées) entre parenthèses
+  const base =
+    filterMode === true ? "Séances facturées"
+    : filterMode === false ? "Séances non facturées"
+    : "Toutes les séances";
+  titleEl.textContent = `${p.nom} ${p.prenom} — ${base} (${nonFactCount})`;
+
+  // Filtrage selon mode
+  const filtered = sessions.filter(d => {
+    if (filterMode === true) {        // facturées
+      return last && compareDates(d, last) <= 0;
+    }
+    if (filterMode === false) {       // non facturées (<= aujourd'hui)
+      const isPastOrToday = compareDates(d, todayStr) <= 0;
+      const isNonFact = !last || compareDates(d, last) > 0;
+      return isPastOrToday && isNonFact;
+    }
+    return true; // toutes
+  });
+
+  // Rendu: futur = bleu ciel si on est en "toutes"
+  filtered.forEach(d => {
+    const li = document.createElement("li");
+    li.textContent = d;
+
+    if (filterMode === undefined && compareDates(d, todayStr) > 0) {
+      li.style.color = "skyblue"; // futur distinct en "toutes"
+    } else {
+      // Colorer facturation (optionnel, neutre sinon)
+      const isNonFact = !last || compareDates(d, last) > 0;
+      // Tu peux colorer si tu veux, ici on laisse blanc pour facturées/non
+      // li.style.color = isNonFact ? "#ffd27f" : "#fff";
+    }
+
+    ul.appendChild(li);
+  });
+}
+
 
     // --- OCR Doctolib ---
     async function processOcrFiles() {
@@ -1192,10 +1301,13 @@ function renderSpecialList() {
   const keys = getSpecialKeys();
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
 
-  const rows = keys.map(k => {
-    const i = patients.findIndex(x => keyName(x.nom, x.prenom) === k);
-    return i >= 0 ? { p: patients[i], i } : null;
-  }).filter(Boolean);
+const rows = keys.map(k => {
+  const i = patients.findIndex(x => keyName(x.nom, x.prenom) === k);
+  return i >= 0 ? { p: patients[i], i } : null;
+}).filter(Boolean)
+  // tri A→Z par défaut pour la liste spéciale
+  .sort((a,b) => (a.p.nom + " " + a.p.prenom).localeCompare(b.p.nom + " " + b.p.prenom, 'fr', {sensitivity:'base'}));
+
 
   rows.forEach(({p, i}) => {
     const li = document.createElement("li");
