@@ -245,27 +245,21 @@
 }.pin-blink { animation: glow 1.2s infinite; }
 
 /* OCR Ajout — identique à Prévus */
-#add-ocr-results ul {
-  list-style: disc;       /* garde les puces */
-  margin: .5rem 0 0 1.2rem; /* marge standard pour les puces */
+#add-ocr-results ul{
+  list-style: disc;
+  margin: .5rem 0 0 1.2rem;
   padding: 0;
 }
-
-#add-ocr-results li {
-  display: list-item;     /* comportement natif avec puce */
+#add-ocr-results li{
+  display: list-item;
   margin: .35rem 0;
   padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
   line-height: 1.4;
 }
-
-#add-ocr-results input[type="checkbox"] {
-  vertical-align: middle; /* case et texte alignés */
-  margin-right: .45rem;   /* petit espace entre case et texte */
-  position: relative;
-  left: 0;                /* annule tout margin-left:auto */
+#add-ocr-results input[type="checkbox"]{
+  vertical-align: middle;
+  margin-right: .45rem;
+  position: static;   /* pas de float ni d’auto-align à droite */
 }
 
 #add-ocr-results label {
@@ -1750,12 +1744,14 @@ function renderAddOcrResults(lines) {
     return;
   }
 
+  // Patients existants → pour cocher seulement les nouveaux
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const existingKeys = new Set(patients.map(p => keyName(p.nom, p.prenom)));
 
   const ul = document.createElement("ul");
   let any = false;
 
+  // Déduplication simple des lignes OCR
   Array.from(new Set(lines)).forEach(fullName => {
     const parts = String(fullName || "").trim().split(/\s+/);
     if (parts.length < 2) return;
@@ -1768,24 +1764,23 @@ function renderAddOcrResults(lines) {
 
     const li = document.createElement("li");
 
-    // Case à cocher
+    // Checkbox (avant le texte)
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.value = `${surname} ${firstname}`;
     cb.checked = isNew;
 
-    const id = "addocr_" + Math.random().toString(36).slice(2);
-    cb.id = id;
-
-    // Texte lié à la checkbox
-    const label = document.createElement("label");
-    label.setAttribute("for", id);
-    label.textContent = `${surname} ${firstname}`;
-    if (!isNew) label.style.fontStyle = "italic";
-
-    // ✅ On met la checkbox AVANT le texte (comme dans "Prévus")
+    // Texte nu (pas de <label>/<span>)
     li.appendChild(cb);
-    li.appendChild(label);
+    li.appendChild(document.createTextNode(" " + surname + " " + firstname));
+
+    // Optionnel : italique si le patient existe déjà
+    if (!isNew) li.style.fontStyle = "italic";
+
+    // Cliquer la ligne (hors case) toggle la checkbox
+    li.addEventListener("click", (e) => {
+      if (e.target !== cb) cb.checked = !cb.checked;
+    });
 
     ul.appendChild(li);
     any = true;
@@ -1800,7 +1795,6 @@ function renderAddOcrResults(lines) {
   zone.appendChild(ul);
   if (btnImport) btnImport.style.display = "inline-block";
 }
-
 
 function importAddOcrSelection() {
   const zone = document.getElementById("add-ocr-results");
