@@ -1736,43 +1736,58 @@ async function processAddOcrFiles() {
 
 function renderAddOcrResults(lines) {
   const zone = document.getElementById("add-ocr-results");
+  const btnImport = document.getElementById("add-ocr-import-btn");
   zone.innerHTML = "";
+
   if (!lines || lines.length === 0) {
     zone.innerHTML = "<p>Aucun patient détecté.</p>";
+    if (btnImport) btnImport.style.display = "none";
     return;
   }
 
-  // Patients existants pour détecter les "nouveaux"
+  // Patients existants pour cocher seulement les "nouveaux"
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const existingKeys = new Set(patients.map(p => keyName(p.nom, p.prenom)));
 
-  // Dédupe
-  const unique = Array.from(new Set(lines));
+  const ul = document.createElement("ul");
+  let any = false;
 
-  const ul = document.createElement("ul"); // ⬅️ pas de classe, comme l’écran "Prévus"
-  unique.forEach(fullName => {
-    const parts = fullName.trim().split(/\s+/);
-    if (parts.length < 2) return; // saute les lignes suspectes
+  // déduplication
+  Array.from(new Set(lines)).forEach(fullName => {
+    const parts = String(fullName || "").trim().split(/\s+/);
+    if (parts.length < 2) return; // ignore si pas de prénom
 
-    const nom = parts[0];
-    const prenom = parts.slice(1).join(" ");
-    const k = keyName(nom, prenom);
-    const isNew = !existingKeys.has(k);
+    const surname   = (parts[0] || "").trim();
+    const firstname = (parts.slice(1).join(" ") || "").trim();
+
+    // filtre d’affichage : ignorer si < 3 caractères pour NOM ou Prénom
+    if (surname.length < 3 || firstname.length < 3) return;
+
+    const isNew = !existingKeys.has(keyName(surname, firstname));
 
     const li = document.createElement("li");
+
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.value = fullName;
-    cb.checked = isNew; // ✅ seulement les nouveaux sont cochés
+    cb.value = `${surname} ${firstname}`;
+    cb.checked = isNew; // seulement les nouveaux cochés par défaut
 
     li.appendChild(cb);
-    li.appendChild(document.createTextNode(" " + fullName)); // ⬅️ texte simple, comme "Prévus"
+    li.appendChild(document.createTextNode(" " + surname + " " + firstname));
     ul.appendChild(li);
+    any = true;
   });
 
+  if (!any) {
+    zone.innerHTML = "<p>Aucun patient détecté.</p>";
+    if (btnImport) btnImport.style.display = "none";
+    return;
+  }
+
   zone.appendChild(ul);
-  document.getElementById("add-ocr-import-btn").style.display = "inline-block";
+  if (btnImport) btnImport.style.display = "inline-block";
 }
+
 
 
 
