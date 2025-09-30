@@ -123,34 +123,48 @@
 }
 
     
-/* Liste OCR (écran d'ajout) */
-.ocr-list {
-  list-style:none;
-  padding:0;
+/* Liste OCR (écran d'ajout) — alignement propre texte/checkbox */
+.ocr-list{
+  list-style-type:none;     /* pas de puces */
+  padding-left:0;           /* supprime le retrait natif des <ul> */
   margin:.5rem 0;
 }
 .ocr-list li{
   display:flex;
   align-items:center;
-  gap:.6rem;
+  gap:.8rem;
+  justify-content:space-between;      /* pousse la case à droite */
   background:#112b55;
   border:1px solid #274b8a;
-  padding:.5rem .7rem;
+  padding:.55rem .8rem;
   border-radius:8px;
   margin-bottom:.4rem;
-   color:#fff;          /* assure la visibilité du texte */
-  min-height:44px;     /* confort tactile */
+  color:#fff;
+  min-height:44px;
 }
+.ocr-list li::marker{ content:''; }   /* sécurité anti-puces */
+
 .ocr-name{
-  flex:1;
-   min-width:0;         /* << clé: autorise le shrink en flexbox */
+  flex:1;                 /* prend toute la largeur dispo */
+  min-width:0;
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
+  font-weight:600;
 }
-.ocr-list input[type="checkbox"]{
-  transform: scale(1.2);
+
+/* case à cocher bien alignée à droite */
+.ocr-checkbox{
+  flex:0 0 auto;
+  transform:scale(1.2);
 }
+
+/* style facultatif si le patient existe déjà */
+.ocr-name.exists{
+  opacity:.7;
+  font-style:italic;
+}
+
 
     
     /* Menu patient */
@@ -1750,6 +1764,7 @@ function renderAddOcrResults(lines) {
   const existingKeys = new Set(patients.map(p => keyName(p.nom, p.prenom)));
 
   const ul = document.createElement("ul");
+  ul.className = "ocr-list";                 // <= IMPORTANT pour le style et la suppression des puces
   let any = false;
 
   // déduplication
@@ -1760,20 +1775,31 @@ function renderAddOcrResults(lines) {
     const surname   = (parts[0] || "").trim();
     const firstname = (parts.slice(1).join(" ") || "").trim();
 
-    // filtre d’affichage : ignorer si < 3 caractères pour NOM ou Prénom
+    // filtre d’affichage : ignorer si < 3 caractères pour NOM ou Prénom (garde ta règle)
     if (surname.length < 3 || firstname.length < 3) return;
 
     const isNew = !existingKeys.has(keyName(surname, firstname));
 
     const li = document.createElement("li");
 
+    // TEXTE à gauche (span stylé)
+    const label = document.createElement("span");
+    label.className = "ocr-name" + (isNew ? "" : " exists");
+    label.textContent = isNew
+      ? `${surname} ${firstname}`
+      : `${surname} ${firstname} (existe déjà)`;
+
+    // CHECKBOX à droite
     const cb = document.createElement("input");
     cb.type = "checkbox";
+    cb.className = "ocr-checkbox";          // <= IMPORTANT pour l’alignement/tailles
     cb.value = `${surname} ${firstname}`;
-    cb.checked = isNew; // seulement les nouveaux cochés par défaut
+    cb.checked = isNew;                     // seulement les nouveaux cochés par défaut
 
+    // ordre = label puis checkbox (le CSS met la case tout à droite)
+    li.appendChild(label);
     li.appendChild(cb);
-    li.appendChild(document.createTextNode(" " + surname + " " + firstname));
+
     ul.appendChild(li);
     any = true;
   });
@@ -1787,8 +1813,6 @@ function renderAddOcrResults(lines) {
   zone.appendChild(ul);
   if (btnImport) btnImport.style.display = "inline-block";
 }
-
-
 
 
 function importAddOcrSelection() {
