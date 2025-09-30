@@ -1387,28 +1387,49 @@ function normalizeOcrName(line) {
 
 
 
-    function showOcrResults(lines) {
-      const div = document.getElementById("ocr-results");
-      div.innerHTML = "";
-      if (lines.length === 0) {
-        div.innerHTML = "<p>Aucun patient détecté.</p>";
-        return;
-      }
+function showOcrResults(lines) {
+  const div = document.getElementById("ocr-results");
+  div.innerHTML = "";
 
-      const ul = document.createElement("ul");
-      lines.forEach(l => {
-        const li = document.createElement("li");
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.checked = true;
-        cb.value = l;
-        li.appendChild(cb);
-        li.appendChild(document.createTextNode(" " + l));
-        ul.appendChild(li);
-      });
-      div.appendChild(ul);
-      document.getElementById("ocr-import-confirm").style.display = "inline-block";
-    }
+  if (!lines || lines.length === 0) {
+    div.innerHTML = "<p>Aucun patient détecté.</p>";
+    return;
+  }
+
+  const ul = document.createElement("ul");
+  let any = false;
+
+  lines.forEach(fullName => {
+    const parts = String(fullName || "").trim().split(/\s+/);
+    if (parts.length < 2) return; // pas de prénom → on ignore
+
+    const surname   = (parts[0] || "").trim();
+    const firstname = (parts.slice(1).join(" ") || "").trim();
+
+    // garde-fou d’affichage : ignorer si < 3 caractères pour NOM ou Prénom
+    if (surname.length < 3 || firstname.length < 3) return;
+
+    const li = document.createElement("li");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = true; // logique “Prévus” : tout coché par défaut
+    cb.value = fullName;
+
+    li.appendChild(cb);
+    li.appendChild(document.createTextNode(" " + fullName));
+    ul.appendChild(li);
+    any = true;
+  });
+
+  if (!any) {
+    div.innerHTML = "<p>Aucun patient détecté.</p>";
+    return;
+  }
+
+  div.appendChild(ul);
+  document.getElementById("ocr-import-confirm").style.display = "inline-block";
+}
+
 
     document.getElementById("ocr-process-btn").addEventListener("click", processOcrFiles);
 
