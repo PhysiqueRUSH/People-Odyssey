@@ -245,27 +245,25 @@
 }
 .pin-blink { animation: glow 1.2s infinite; }
 
-/* RESET "brut" pour la liste OCR de l'écran Ajout */
-#add-ocr-results ul{
-  list-style: disc;
-  margin: .5rem 0 0 1.2rem;
+/* OCR Ajout — identique à Prévus */
+#add-ocr-results ul {
+  list-style: disc;       /* garde les puces */
+  margin: .5rem 0 0 1.2rem; /* marge standard pour les puces */
   padding: 0;
 }
-#add-ocr-results li{
-  display: list-item;      /* garde la puce native */
-  background: transparent; /* enlève les gros cadres */
-  border: 0;
-  padding: 0;
+
+#add-ocr-results li {
+  display: list-item;     /* comportement natif avec puce */
   margin: .35rem 0;
-  border-radius: 0;
-  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: inherit;
-  line-height: 1.4;
 }
-#add-ocr-results input[type="checkbox"]{
-  vertical-align: middle;  /* aligne case et texte sur la même ligne */
-  margin-right: .45rem;
-  transform: none;
+
+#add-ocr-results input[type="checkbox"] {
+  vertical-align: middle; /* case et texte alignés */
+  margin-right: .45rem;   /* petit espace entre case et texte */
 }
     
   </style>
@@ -1773,7 +1771,7 @@ cb.id = id;
 
 const label = document.createElement("label");
 label.setAttribute("for", id);
-label.textContent = " " + surname + " " + firstname;
+label.textContent = `${surname} ${firstname}`;
 if (!isNew) label.style.fontStyle = "italic";
 
 li.appendChild(cb);
