@@ -247,19 +247,27 @@
     <button class="save-btn" id="ocr-import-confirm" style="display:none;">✅ Importer</button>
     <button class="back-btn" onclick="hideOcrScreen()">✖ Annuler</button>
   </div>
-    <!-- Écran informations patient -->
-  <div id="info-screen" class="container">
-    <h3 id="info-title"></h3>
-    <div class="phone-row">
-      <input type="tel" id="info-phone" placeholder="Numéro de téléphone">
-      <button class="icon-btn" title="Appeler" onclick="callPatient()">📞</button>
-      <button class="icon-btn" title="SMS" onclick="smsPatient()">💬</button>
-    </div>
-    <input type="text" id="info-rejet" placeholder="Rejet de paiement">
-    <textarea id="info-notes" rows="4" placeholder="Autres notes..."></textarea>
-    <button class="save-btn" onclick="saveInfo()">💾 Enregistrer</button>
-    <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  
+  <!-- Écran informations patient -->
+<div id="info-screen" class="container">
+  <h3 id="info-title"></h3>
+  <!-- NOUVEAU : édition du nom/prénom -->
+  <div class="phone-row" style="gap:.6rem;">
+    <input type="text" id="info-nom" placeholder="Nom (MAJUSCULES)">
+    <input type="text" id="info-prenom" placeholder="Prénom">
   </div>
+
+  <div class="phone-row">
+    <input type="tel" id="info-phone" placeholder="Numéro de téléphone">
+    <button class="icon-btn" title="Appeler" onclick="callPatient()">📞</button>
+    <button class="icon-btn" title="SMS" onclick="smsPatient()">💬</button>
+  </div>
+  <input type="text" id="info-rejet" placeholder="Rejet de paiement">
+  <textarea id="info-notes" rows="4" placeholder="Autres notes..."></textarea>
+  <button class="save-btn" onclick="saveInfo()">💾 Enregistrer</button>
+  <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+</div>
+
 
   <!-- Écran sélection présences -->
   <div id="presence-screen" class="container">
@@ -328,7 +336,13 @@
     let presenceSelection = new Set();
     let currentDayView = null;
 
-    // --- Utilitaires dates ---
+    // --- Utilitaires syntaxe des noms ---
+function normName(s){return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z'’ -]/g,"").replace(/\s+/g," ").trim();}
+function samePerson(aNom,aPre,bNom,bPre){return normName(aNom)===normName(bNom) && normName(aPre)===normName(bPre);}
+function mergeUniqueDates(a=[],b=[]){return Array.from(new Set([...a,...b]));}
+
+      
+      // --- Utilitaires dates ---
     function formatDate(date) {
       return date.toLocaleDateString("fr-FR");
     }
@@ -432,18 +446,26 @@
       document.getElementById("calendar-screen").style.display = "block";
       renderCalendar();
     }
-    function showInfoScreen() {
-      patientMenu.style.display = "none";
-      hideAll();
-      document.getElementById("info-screen").style.display = "block";
+  
+      function showInfoScreen() {
+  patientMenu.style.display = "none";
+  hideAll();
+  document.getElementById("info-screen").style.display = "block";
 
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      const p = patients[selectedPatientIndex];
-      document.getElementById("info-title").textContent = p.nom + " " + p.prenom;
-      document.getElementById("info-phone").value = p.phone || "";
-      document.getElementById("info-rejet").value = p.rejet || "";
-      document.getElementById("info-notes").value = p.notes || "";
-    }
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+
+  document.getElementById("info-title").textContent = p.nom + " " + p.prenom;
+
+  // NOUVEAU : préremplissage des champs nom/prénom
+  document.getElementById("info-nom").value = p.nom || "";
+  document.getElementById("info-prenom").value = p.prenom || "";
+
+  document.getElementById("info-phone").value = p.phone || "";
+  document.getElementById("info-rejet").value = p.rejet || "";
+  document.getElementById("info-notes").value = p.notes || "";
+}
+
     function showPresenceSelection() {
       patientMenu.style.display = "none";
       hideAll();
@@ -506,15 +528,65 @@
     });
 
     // --- Sauvegarde infos ---
-    function saveInfo() {
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      if (selectedPatientIndex === null) return;
-      patients[selectedPatientIndex].phone = document.getElementById("info-phone").value.trim();
-      patients[selectedPatientIndex].rejet = document.getElementById("info-rejet").value.trim();
-      patients[selectedPatientIndex].notes = document.getElementById("info-notes").value.trim();
-      localStorage.setItem("patients", JSON.stringify(patients));
-      showMainScreen();
+ function saveInfo() {
+  let patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  if (selectedPatientIndex === null) return;
+
+  const idx = selectedPatientIndex;
+  const newNom = (document.getElementById("info-nom").value || "").trim();
+  const newPrenom = (document.getElementById("info-prenom").value || "").trim();
+  if (!newNom && !newPrenom) {
+    alert("Veuillez renseigner au moins Nom ou Prénom.");
+    return;
+  }
+
+  const p = patients[idx];
+  const prevNom = p.nom, prevPrenom = p.prenom;
+
+  // Prépare l'objet à jour (sans toucher aux séances/notes)
+  p.nom = newNom || p.nom;
+  p.prenom = newPrenom || p.prenom;
+  p.phone = (document.getElementById("info-phone").value || "").trim();
+  p.rejet = (document.getElementById("info-rejet").value || "").trim();
+  p.notes = (document.getElementById("info-notes").value || "").trim();
+
+  // Cherche un autre patient EXACTEMENT identique après renommage
+  const dupIndex = patients.findIndex((q, i) =>
+    i !== idx && samePerson(q.nom, q.prenom, p.nom, p.prenom)
+  );
+
+  if (dupIndex !== -1) {
+    const q = patients[dupIndex];
+    const ok = confirm(
+      `Un autre patient porte déjà ce nom :\n\n`+
+      `A) ${p.nom} ${p.prenom}\n`+
+      `B) ${q.nom} ${q.prenom}\n\n`+
+      `Souhaites-tu FUSIONNER leurs séances et conserver un seul patient ?`
+    );
+    if (ok) {
+      // Fusionne les présences et conserve p (celui qu'on édite)
+      p.presences = mergeUniqueDates(p.presences, q.presences);
+      // Option : garder les infos non vides de q si p est vide
+      if (!p.phone && q.phone) p.phone = q.phone;
+      if (!p.rejet && q.rejet) p.rejet = q.rejet;
+      if (!p.notes && q.notes) p.notes = q.notes;
+      // lastFactureDate : garde la plus récente
+      if (q.lastFactureDate && (!p.lastFactureDate || compareDates(q.lastFactureDate, p.lastFactureDate) > 0)) {
+        p.lastFactureDate = q.lastFactureDate;
+      }
+      // Supprime l’autre fiche
+      patients.splice(dupIndex, 1);
+      // Recalcule selectedPatientIndex si besoin
+      selectedPatientIndex = patients.indexOf(p);
     }
+  }
+
+  patients[selectedPatientIndex] = p;
+  localStorage.setItem("patients", JSON.stringify(patients));
+  showMainScreen();
+  renderPatients(searchInput.value);
+}
+
 
     // --- Ajout présence rapide ---
     function addPresenceOffset(offset) {
