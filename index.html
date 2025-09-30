@@ -125,9 +125,12 @@
   padding:.5rem .7rem;
   border-radius:8px;
   margin-bottom:.4rem;
+   color:#fff;          /* assure la visibilité du texte */
+  min-height:44px;     /* confort tactile */
 }
 .ocr-name{
   flex:1;
+   min-width:0;         /* << clé: autorise le shrink en flexbox */
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
@@ -1572,31 +1575,49 @@ function renderAddOcrResults(lines) {
     return;
   }
 
+  // Tous les patients déjà enregistrés (pour savoir qui est "nouveau")
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const existingKeys = new Set(patients.map(p => keyName(p.nom, p.prenom)));
+
+  // Noms OCR uniques (ex: ['DURAND Paul', 'MARTIN Léa', ...])
   const unique = Array.from(new Set(lines));
 
   const ul = document.createElement("ul");
   ul.className = "ocr-list";
 
-  unique.forEach(l => {
+  unique.forEach((fullName, idx) => {
+    // Sépare NOM / Prénom pour calculer la clé normalisée
+    const parts = fullName.split(" ");
+    const nom = (parts[0] || "").trim();
+    const prenom = (parts.slice(1).join(" ") || "").trim();
+    const k = keyName(nom, prenom);
+
+    const isNew = !existingKeys.has(k);  // ← nouveau si pas déjà dans la base
+
     const li = document.createElement("li");
 
+    const id = "addocr_" + idx;
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.checked = true;
-    cb.value = l;
+    cb.id = id;
+    cb.value = fullName;
+    cb.checked = isNew;                  // ← cochée seulement si "nouveau"
 
-    const nameEl = document.createElement("span");
-    nameEl.className = "ocr-name";
-    nameEl.textContent = l; // NOM Prénom
+    const label = document.createElement("label");
+    label.className = "ocr-name" + (isNew ? "" : " exists");
+    label.setAttribute("for", id);
+    // Si tu ne veux pas l’indication, supprime la partie " (existe déjà)"
+    label.textContent = isNew ? fullName : (fullName + " (existe déjà)");
 
     li.appendChild(cb);
-    li.appendChild(nameEl);
+    li.appendChild(label);
     ul.appendChild(li);
   });
 
   zone.appendChild(ul);
   document.getElementById("add-ocr-import-btn").style.display = "inline-block";
 }
+
 
 
 function importAddOcrSelection() {
