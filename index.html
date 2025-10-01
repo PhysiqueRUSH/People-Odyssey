@@ -316,6 +316,29 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
 
 /* Pour placer les bulles par rapport aux LI */
 .patient-list li, #specialList li, #day-patient-list li { position:relative; }
+
+ /* Bouton ❌ de la barre de recherche */
+.search-bar .clear-btn{
+  background:#1f3f7a;
+  border:none;
+  padding:.4rem .6rem;
+  border-radius:6px;
+  color:#fff;
+  cursor:pointer;
+  margin-right:.4rem;
+  min-width:44px;
+}
+
+#facture-list li{
+  background:#16305a; 
+  margin-bottom:.5rem; 
+  padding:.6rem; 
+  border-radius:6px; 
+  display:flex; 
+  align-items:center; 
+}
+ 
+   
    
 </style>
   
@@ -330,9 +353,11 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
   <div id="main-screen" class="container">
     <div class="today-date" id="todayDate"></div>
     <div class="search-bar">
+  <button id="clearSearchBtn" class="clear-btn" title="Effacer la recherche" onclick="clearMainSearch()">❌</button>
   <input type="text" id="searchInput" placeholder="Rechercher un patient...">
   <button id="sortToggleBtn" title="Changer l'ordre" style="margin-left:.4rem;" onclick="cycleSortMode()">↕️</button>
 </div>
+
 
 
 <!-- Rangée 1 : +  |  📌  |  📸Prévus🧾 -->
@@ -814,6 +839,12 @@ function deletePatient(index) {
       renderPatients(searchInput.value);
       updatePinButton();
     }
+
+function clearMainSearch(){
+  searchInput.value = "";
+  renderPatients("");
+}
+      
     function showCalendar() {
       hideAll();
       document.getElementById("calendar-screen").style.display = "block";
@@ -1326,13 +1357,13 @@ function renderFactureList() {
   const titleEl = document.getElementById("facture-title");
   ul.innerHTML = "";
 
-  const todayVal = formatDate(new Date()); // on ignore les séances > aujourd'hui
+  const tStr = formatDate(new Date()); // today (on ignore les séances > aujourd'hui)
 
   // Calcule le nonFact par patient (en excluant le futur)
   const all = patients.map(p => {
     let nonFact = 0;
     (p.presences || []).forEach(dateStr => {
-      if (compareDates(dateStr, todayVal) <= 0) { // seulement aujourd'hui ou passé
+      if (compareDates(dateStr, tStr) <= 0) {
         if (!p.lastFactureDate || compareDates(dateStr, p.lastFactureDate) > 0) {
           nonFact++;
         }
@@ -1341,42 +1372,73 @@ function renderFactureList() {
     return { ...p, nonFact };
   }).filter(p => p.nonFact > 0);
 
-  // Total global
+  // Total global + estimation €
   const totalGlobal = all.reduce((sum, p) => sum + p.nonFact, 0);
-  if (titleEl) {
-    titleEl.textContent = `Patients avec séances non facturées (${totalGlobal})`;
+  if (titleEl) titleEl.textContent = `Patients avec séances non facturées (${totalGlobal})`;
+  const estimateEl = document.getElementById("facture-estimate");
+  if (estimateEl) {
+    const euros = Math.round(totalGlobal * 18.2);
+    estimateEl.textContent = `soit environ ${euros.toLocaleString('fr-FR')} € à récupérer`;
   }
-  // Affiche "soit environ xxxx € à récupérer"
-const estimateEl = document.getElementById("facture-estimate");
-if (estimateEl) {
-  const euros = Math.round(totalGlobal * 18.2);
-  estimateEl.textContent = `soit environ ${euros.toLocaleString('fr-FR')} € à récupérer`;
-}
-
 
   // Tri : plus de nonFact d'abord, puis alpha
-  all.sort((a,b) => {
-    if (b.nonFact !== a.nonFact) return b.nonFact - a.nonFact;
-    return (a.nom + " " + a.prenom).localeCompare(b.nom + " " + b.prenom);
+  all.sort((a,b) => (b.nonFact - a.nonFact) ||
+    (a.nom + " " + a.prenom).localeCompare(b.nom + " " + b.prenom, 'fr', {sensitivity:'base'}));
+
+  // Rendu avec émoji ❓/📑 après le nom, et 💸 tout à droite
+  all.forEach(p => {
+    const li = document.createElement("li");
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = `${p.nom} ${p.prenom} (${p.nonFact})`;
+    li.appendChild(nameSpan);
+
+    // ❓ si "Ordonnance non scannée"
+    if (p.ordNonScan) {
+      li.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e,self)=>{
+        const info = (p.ordDetails||"").trim();
+        const txt = info ? ("ordonnance du " + info) : "Ordonnance non scannée";
+        showTip(li, txt);
+      }));
+    }
+
+    // 📑 si "Ordonnance à renouveler"
+    if (p.ordRenouv) {
+      li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
+    }
+
+    // 💸 tout à droite
+    const right = document.createElement("span");
+    right.className = "right-edge";
+
+    const billEmoji = makeEmoji("💸", "Facturer jusqu'à aujourd'hui", ()=>{
+      // 1) Mettre lastFactureDate = aujourd'hui pour ce patient
+      const key = keyName(p.nom, p.prenom);
+      const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
+      if (idx !== -1) {
+        patients[idx].lastFactureDate = formatDate(new Date());
+        localStorage.setItem("patients", JSON.stringify(patients));
+      }
+      // 2) Rafraîchir "À facturer" (le patient disparaît) + mettre à jour l’écran principal & le 📌
+      renderFactureList();
+      renderPatients(searchInput.value);
+      updatePinButton();
+    });
+
+    right.appendChild(billEmoji);
+    li.appendChild(right);
+
+    // (Option) Couleur indicative selon le nombre de non facturées (comme avant)
+    if (p.nonFact > 20)        li.style.color = "red";
+    else if (p.nonFact >= 10)  li.style.color = "orange";
+    else if (p.nonFact >= 5)   li.style.color = "yellow";
+    else if (p.nonFact >= 2)   li.style.color = "green";
+    else                       li.style.color = "skyblue";
+
+    ul.appendChild(li);
   });
-
-  // Rendu avec codes couleurs et symbole d’alerte si rejet renseigné
-all.forEach(p => {
-  const li = document.createElement("li");
-  li.textContent = `${p.nom} ${p.prenom} (${p.nonFact})`;
-  if (p.rejet && p.rejet.trim()) {
-    li.textContent += " ⚠️";
-  }
-
-  if (p.nonFact > 20)        li.style.color = "red";
-  else if (p.nonFact >= 10)  li.style.color = "orange";
-  else if (p.nonFact >= 5)   li.style.color = "yellow";
-  else if (p.nonFact >= 2)   li.style.color = "green";
-  else                       li.style.color = "skyblue";
-
-  ul.appendChild(li);
-});
 }
+
 
       // ====== Listes de séances d'un patient (facturées / non facturées / toutes) ======
 // filterMode: true = facturées, false = non facturées (<= aujourd'hui), undefined = toutes (inclut futur en bleu ciel)
