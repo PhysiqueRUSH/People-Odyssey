@@ -278,7 +278,45 @@
 #add-ocr-results input[type="checkbox"] { 
   width: auto;  /* sécurité si une règle globale force une largeur */
 }
-    
+
+
+ /* --- Badges & actions en ligne --- */
+li .emoji { margin-left:.35rem; cursor:default; user-select:none; }
+li .emoji.clickable { cursor:pointer; }
+li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:.25rem; }
+
+/* Listes autres que .patient-list (jour) -> forcer flex comme la liste principale */
+#day-patient-list li{
+  background:#16305a; 
+  margin-bottom:.5rem; 
+  padding:.6rem; 
+  border-radius:6px; 
+  display:flex; 
+  align-items:center; 
+}
+
+/* Info-bulle éphémère pour ❓ */
+.tooltip-bubble{
+  position:absolute;
+  right:.6rem;
+  top:50%;
+  transform:translateY(-50%);
+  background:rgba(0,0,0,.9);
+  color:#fff;
+  padding:.35rem .55rem;
+  border-radius:6px;
+  font-size:.9rem;
+  pointer-events:none;
+  z-index:10;
+  max-width:70%;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* Pour placer les bulles par rapport aux LI */
+.patient-list li, #specialList li, #day-patient-list li { position:relative; }
+   
 </style>
   
 </head>
@@ -411,6 +449,20 @@
   </div>
   <input type="text" id="info-rejet" placeholder="Rejet de paiement">
   <textarea id="info-notes" rows="4" placeholder="Autres notes..."></textarea>
+  <!-- Ordonnances -->
+<div class="phone-row" style="gap:.8rem; align-items:center;">
+  <label style="display:flex;align-items:center;gap:.35rem;">
+    <input type="checkbox" id="info-ord-nonscan">
+    <span>Ordonnance non scannée</span>
+  </label>
+  <label style="display:flex;align-items:center;gap:.35rem;">
+    <input type="checkbox" id="info-ord-renouv">
+    <span>Ordonnance à renouveler</span>
+  </label>
+</div>
+<input type="text" id="info-ord-details" placeholder="ordonnance du jj/mm/aaaa — localisation"
+       style="width:100%;margin:.6rem 0 .2rem 0;padding:.6rem;border:none;border-radius:6px;display:none;">
+
   <button class="save-btn" onclick="saveInfo()">💾 Enregistrer</button>
   <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
 </div>
@@ -511,6 +563,37 @@ function mergeUniqueDates(a=[],b=[]){return Array.from(new Set([...a,...b]));}
       return date.toLocaleDateString("fr-FR");
     }
 
+      // --- Helpers dates / clés / état du jour ---
+function todayStr(){ return formatDate(new Date()); }
+function isPresentToday(p){ return Array.isArray(p.presences) && p.presences.includes(todayStr()); }
+function parseDateFR(s){ const [j,m,a]=s.split("/").map(Number); return new Date(a,m-1,j); }
+function addDaysFR(dateStr, n){
+  const d=parseDateFR(dateStr); d.setDate(d.getDate()+n); return formatDate(d);
+}
+function patientKey(p){ return keyName(p.nom||"", p.prenom||""); }
+
+// --- Stockage éphémère "facturé aujourd'hui" -> 💰 reste visible toute la journée ---
+function getBilledTodayMap(){ try{return JSON.parse(localStorage.getItem("billedToday")||"{}");}catch(e){return {};} }
+function setBilledToday(k, dateStr){ const m=getBilledTodayMap(); m[k]=dateStr; localStorage.setItem("billedToday", JSON.stringify(m)); }
+function isBilledToday(k){ return getBilledTodayMap()[k]===todayStr(); }
+function cleanupBilledToday(){ const m=getBilledTodayMap(); const t=todayStr(); let changed=false;
+  for(const k in m){ if(m[k]!==t){ delete m[k]; changed=true; } }
+  if(changed) localStorage.setItem("billedToday", JSON.stringify(m));
+}
+
+// --- Info-bulle de 2s sur un <li> ---
+function showTip(li, text){
+  if(!li) return;
+  const old = li.querySelector(".tooltip-bubble");
+  if(old) old.remove();
+  const tip = document.createElement("div");
+  tip.className="tooltip-bubble";
+  tip.textContent = text;
+  li.appendChild(tip);
+  setTimeout(()=>{ tip.remove(); }, 2000);
+}
+
+
     // Normaliser une date entrée par l'utilisateur (jj/mm/aa → jj/mm/aaaa)
     function normalizeDate(input) {
       const parts = input.split("/");
@@ -563,7 +646,16 @@ function sortPatients(arr) {
   else if (sortMode === "ADDED_NEW") copy.sort((a,b) => -byIndexAsc(a,b)); // plus récent en premier
   return copy;
 }
-   
+
+      function makeEmoji(txt, title, onClick, extraClass=""){
+  const s = document.createElement("span");
+  s.className = "emoji" + (onClick ? " clickable" : "") + (extraClass ? " "+extraClass : "");
+  s.textContent = txt;
+  if(title) s.title = title;
+  if(onClick) s.addEventListener("click", (e)=>{ e.stopPropagation(); onClick(e, s); });
+  return s;
+}
+
       
       // --- Gestion Patients ---
 function renderPatients(filter = "") {
@@ -582,27 +674,79 @@ if (countEl) countEl.textContent = `${all.length} patients`;
   // Appliquer le tri selon sortMode
   rows = sortPatients(rows);
 
-  rows.forEach(({ p, i }) => {
-    const li = document.createElement("li");
+ rows.forEach(({ p, i }) => {
+  const li = document.createElement("li");
 
-    const deleteBtn = document.createElement("button");
-    deleteBtn.innerHTML = "🗑️";
-    deleteBtn.className = "delete-btn";
-    deleteBtn.onclick = (e) => {
-      e.stopPropagation();
-      deletePatient(i); // index original
-    };
+  // bouton corbeille (avec confirmation déjà gérée par deletePatient)
+  const deleteBtn = document.createElement("button");
+  deleteBtn.innerHTML = "🗑️";
+  deleteBtn.className = "delete-btn";
+  deleteBtn.onclick = (e) => { e.stopPropagation(); deletePatient(i); };
 
-    const span = document.createElement("span");
-    span.textContent = p.nom + " " + p.prenom;
-    if (p.rejet && p.rejet.trim() !== "") span.textContent += " ⚠️";
+  const nameSpan = document.createElement("span");
+  nameSpan.textContent = p.nom + " " + p.prenom;
 
+  // Icônes en ligne (après le nom), dans l'ordre demandé :
+  // 1) 🙋 si présent aujourd'hui
+  if (isPresentToday(p)) {
     li.appendChild(deleteBtn);
-    li.appendChild(span);
+    li.appendChild(nameSpan);
+    li.appendChild(makeEmoji("🙋", "Présent aujourd'hui"));
+  } else {
+    li.appendChild(deleteBtn);
+    li.appendChild(nameSpan);
+  }
 
-    li.onclick = () => showPatientMenu(i);
-    patientListEl.appendChild(li);
-  });
+  // 2) ⚠️ si rejet
+  if (p.rejet && p.rejet.trim() !== "") {
+    li.appendChild(makeEmoji("⚠️", "Rejet de paiement"));
+  }
+
+  // 3) ❓ si "Ordonnance non scannée" (cliquable -> bulle 2s)
+  if (p.ordNonScan) {
+    li.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e, self)=>{
+      const info = (p.ordDetails||"").trim();
+      const txt = info ? ("ordonnance du " + info) : "Ordonnance non scannée";
+      showTip(li, txt);
+    }));
+  }
+
+  // 4) 📑 si "Ordonnance à renouveler"
+  if (p.ordRenouv) {
+    li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
+  }
+
+  // 5) tout à droite : 💸 / 💰 (facturation rapide)
+  const right = document.createElement("span");
+  right.className = "right-edge";
+
+  const k = patientKey(p);
+  const hasNonFact = nonFactCount(p) > 0;
+  if (hasNonFact || isBilledToday(k)) {
+    const billedNow = isBilledToday(k);
+    const icon = billedNow ? "💰" : "💸";
+    const title = billedNow ? "Facturé aujourd'hui" : "Facturer jusqu'à aujourd'hui";
+    const billEmoji = makeEmoji(icon, title, billedNow ? null : ()=>{
+      // Action "facturer maintenant"
+      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+      const q = patients[i];
+      if (!q) return;
+      q.lastFactureDate = todayStr();
+      patients[i] = q;
+      localStorage.setItem("patients", JSON.stringify(patients));
+      setBilledToday(k, todayStr()); // affichera 💰 pour aujourd'hui
+      renderPatients(searchInput.value);
+      updatePinButton();
+    });
+    right.appendChild(billEmoji);
+  }
+
+  li.appendChild(right);
+
+  // Ouvrir le menu patient au clic
+  li.onclick = () => showPatientMenu(i);
+  patientListEl.appendChild(li);
+});
 }
 
 
@@ -614,7 +758,17 @@ if (countEl) countEl.textContent = `${all.length} patients`;
         return;
       }
       const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      patients.push({ nom, prenom, phone:"", rejet:"", notes:"", presences:[], lastFactureDate:null });
+patients.push({
+  nom, prenom,
+  phone:"", rejet:"", notes:"",
+  presences:[],
+  lastFactureDate:null,
+  // Nouveaux champs :
+  ordNonScan:false,
+  ordRenouv:false,
+  ordDetails:""
+});
+
       localStorage.setItem("patients", JSON.stringify(patients));
       document.getElementById("nom").value = "";
       document.getElementById("prenom").value = "";
@@ -622,12 +776,17 @@ if (countEl) countEl.textContent = `${all.length} patients`;
       renderPatients(searchInput.value);
     }
 
-    function deletePatient(index) {
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      patients.splice(index, 1);
-      localStorage.setItem("patients", JSON.stringify(patients));
-      renderPatients(searchInput.value);
-    }
+function deletePatient(index) {
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[index];
+  if(!p) return;
+  const ok = confirm(`Supprimer définitivement ${p.nom} ${p.prenom} ?`);
+  if(!ok) return;
+  patients.splice(index, 1);
+  localStorage.setItem("patients", JSON.stringify(patients));
+  renderPatients(searchInput.value);
+}
+
 
     // --- Navigation ---
     function showAddScreen() {
@@ -678,6 +837,34 @@ if (countEl) countEl.textContent = `${all.length} patients`;
   document.getElementById("info-phone").value = p.phone || "";
   document.getElementById("info-rejet").value = p.rejet || "";
   document.getElementById("info-notes").value = p.notes || "";
+
+  // --- Ordonnances (mutuellement exclusives) ---
+const cbNon = document.getElementById("info-ord-nonscan");
+const cbRen = document.getElementById("info-ord-renouv");
+const det   = document.getElementById("info-ord-details");
+
+cbNon.checked = !!p.ordNonScan;
+cbRen.checked = !!p.ordRenouv;
+det.value     = p.ordDetails || "";
+
+// affichage conditionnel du champ "ordonnance du ..."
+det.style.display = cbNon.checked ? "block" : "none";
+
+// binder une seule fois
+if(!cbNon.__bound){
+  cbNon.addEventListener("change", ()=>{
+    if(cbNon.checked){ cbRen.checked = false; det.style.display = "block"; }
+    else{ det.style.display = "none"; }
+  });
+  cbNon.__bound = true;
+}
+if(!cbRen.__bound){
+  cbRen.addEventListener("change", ()=>{
+    if(cbRen.checked){ cbNon.checked = false; det.style.display = "none"; }
+  });
+  cbRen.__bound = true;
+}
+      
 }
 
     function showPresenceSelection() {
@@ -767,6 +954,20 @@ function closeMenuAndShowFactureList(mode) {
   p.phone = (document.getElementById("info-phone").value || "").trim();
   p.rejet = (document.getElementById("info-rejet").value || "").trim();
   p.notes = (document.getElementById("info-notes").value || "").trim();
+
+  // --- Sauvegarde ordonnances ---
+const cbNon = document.getElementById("info-ord-nonscan");
+const cbRen = document.getElementById("info-ord-renouv");
+const det   = document.getElementById("info-ord-details");
+
+p.ordNonScan = !!cbNon.checked;
+p.ordRenouv  = !!cbRen.checked;
+p.ordDetails = (det.value || "").trim();
+
+// garantir l'exclusivité aussi côté data
+if(p.ordNonScan && p.ordRenouv) p.ordRenouv = false;
+if(!p.ordNonScan) p.ordDetails = (p.ordDetails||""); // on conserve ce que tu as saisi, même masqué
+ 
 
   // Cherche un autre patient EXACTEMENT identique après renommage
   const dupIndex = patients.findIndex((q, i) =>
@@ -981,7 +1182,7 @@ function sortPatientsByMode(rows, mode) {
 }
 
       
-   function renderDayPatients(dateStr) {
+  function renderDayPatients(dateStr) {
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const q = (document.getElementById("daySearchInput")?.value || "").toLowerCase();
 
@@ -991,36 +1192,59 @@ function sortPatientsByMode(rows, mode) {
     .filter(({p}) => p.presences && p.presences.includes(dateStr))
     .filter(({p}) => (p.nom + " " + p.prenom).toLowerCase().includes(q));
 
-  // Appliquer le tri selon daySortMode
+  // Tri selon daySortMode (déjà défini dans ton code)
   rows = sortPatientsByMode(rows, daySortMode);
 
   dayPatientList.innerHTML = "";
   rows.forEach(({p, i}) => {
     const li = document.createElement("li");
+
+    // Corbeille (supprime la présence du jour) + confirmation
     const delBtn = document.createElement("button");
     delBtn.textContent = "🗑️";
     delBtn.className = "delete-btn";
-    delBtn.onclick = () => {
-      p.presences = p.presences.filter(d => d !== dateStr);
+    delBtn.onclick = (e) => {
+      e.stopPropagation();
+      const ok = confirm(`Retirer ${p.nom} ${p.prenom} des présents du ${dateStr} ?`);
+      if(!ok) return;
+      p.presences = (p.presences||[]).filter(d => d !== dateStr);
       patients[i] = p;
       localStorage.setItem("patients", JSON.stringify(patients));
       renderDayPatients(dateStr);
       updateDayTitle(dateStr);
     };
-    li.appendChild(delBtn);
+
     const span = document.createElement("span");
     span.textContent = p.nom + " " + p.prenom;
+
+    // Flèche ➡️ collée au bord droit : “reporter au lendemain”
+    const right = document.createElement("span");
+    right.className = "right-edge";
+    const move = makeEmoji("➡️", "Reporter au lendemain", ()=>{
+      const tomorrow = addDaysFR(dateStr, 1);
+      p.presences = (p.presences || []).filter(d => d !== dateStr);
+      if(!p.presences.includes(tomorrow)) p.presences.push(tomorrow);
+      patients[i] = p;
+      localStorage.setItem("patients", JSON.stringify(patients));
+      renderDayPatients(dateStr);
+      updateDayTitle(dateStr);
+    });
+    right.appendChild(move);
+
+    li.appendChild(delBtn);
     li.appendChild(span);
+    li.appendChild(right);
     dayPatientList.appendChild(li);
   });
 
-  // écouteur de saisie (une seule fois)
+  // écouteur de recherche (une seule fois)
   const inp = document.getElementById("daySearchInput");
   if (inp && !inp.__bound) {
     inp.addEventListener("input", () => renderDayPatients(dateStr));
     inp.__bound = true;
   }
 }
+
 
     // --- Facturation ---
     function saveLastFactureDate() {
@@ -1624,13 +1848,11 @@ function renderSpecialList() {
   const keys = getSpecialKeys();
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
 
-const rows = keys.map(k => {
-  const i = patients.findIndex(x => keyName(x.nom, x.prenom) === k);
-  return i >= 0 ? { p: patients[i], i } : null;
-}).filter(Boolean)
-  // tri A→Z par défaut pour la liste spéciale
-  .sort((a,b) => (a.p.nom + " " + a.p.prenom).localeCompare(b.p.nom + " " + b.p.prenom, 'fr', {sensitivity:'base'}));
-
+  const rows = keys.map(k => {
+    const i = patients.findIndex(x => keyName(x.nom, x.prenom) === k);
+    return i >= 0 ? { p: patients[i], i } : null;
+  }).filter(Boolean)
+    .sort((a,b) => (a.p.nom + " " + a.p.prenom).localeCompare(b.p.nom + " " + b.p.prenom, 'fr', {sensitivity:'base'}));
 
   rows.forEach(({p, i}) => {
     const li = document.createElement("li");
@@ -1640,16 +1862,28 @@ const rows = keys.map(k => {
     deleteBtn.className = "delete-btn";
     deleteBtn.onclick = (e) => {
       e.stopPropagation();
-      deletePatient(i);    // supprime vraiment le patient
-      renderSpecialList(); // rafraîchir
+      deletePatient(i);
+      renderSpecialList();
       updatePinButton();
     };
 
-    const span = document.createElement("span");
-    span.textContent = p.nom + " " + p.prenom + (p.rejet && p.rejet.trim() ? " ⚠️" : "");
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = p.nom + " " + p.prenom;
 
     li.appendChild(deleteBtn);
-    li.appendChild(span);
+    li.appendChild(nameSpan);
+
+    if (isPresentToday(p)) li.appendChild(makeEmoji("🙋","Présent aujourd'hui"));
+    if (p.rejet && p.rejet.trim()) li.appendChild(makeEmoji("⚠️","Rejet de paiement"));
+    if (p.ordNonScan) {
+      li.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e,self)=>{
+        const info = (p.ordDetails||"").trim();
+        const txt = info ? ("ordonnance du " + info) : "Ordonnance non scannée";
+        showTip(li, txt);
+      }));
+    }
+    if (p.ordRenouv) li.appendChild(makeEmoji("📑","Ordonnance à renouveler"));
+
     li.onclick = () => showPatientMenu(i);
     listEl.appendChild(li);
   });
@@ -1658,6 +1892,7 @@ const rows = keys.map(k => {
   const titleEl = document.getElementById("special-title");
   if (titleEl) titleEl.textContent = `Liste spéciale (${total})`;
 }
+
 
 // ====== RENFO DU SOIR ======
 // Ajoute 2 présences : (1) aujourd'hui, (2) jour ouvré de la semaine le moins chargé.
@@ -1874,6 +2109,7 @@ document.getElementById("pres-ocr-import-btn").addEventListener("click", importP
    // --- Init ---
 showToday();
 showMainScreen();   // garantit un état propre
+cleanupBilledToday();
 updatePinButton();  // colore/clignote le 📌 dès le départ
   </script>
   <script>
