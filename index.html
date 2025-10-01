@@ -1361,9 +1361,9 @@ function renderFactureList() {
   const titleEl = document.getElementById("facture-title");
   ul.innerHTML = "";
 
-  const tStr = formatDate(new Date()); // today (on ignore les séances > aujourd'hui)
+  const tStr = formatDate(new Date()); // today
 
-  // Calcule le nonFact par patient (en excluant le futur)
+  // Construire la liste avec nombre de non-facturées
   const all = patients.map(p => {
     let nonFact = 0;
     (p.presences || []).forEach(dateStr => {
@@ -1376,7 +1376,7 @@ function renderFactureList() {
     return { ...p, nonFact };
   }).filter(p => p.nonFact > 0);
 
-  // Total global + estimation €
+  // Total global
   const totalGlobal = all.reduce((sum, p) => sum + p.nonFact, 0);
   if (titleEl) titleEl.textContent = `Patients avec séances non facturées (${totalGlobal})`;
   const estimateEl = document.getElementById("facture-estimate");
@@ -1389,13 +1389,18 @@ function renderFactureList() {
   all.sort((a,b) => (b.nonFact - a.nonFact) ||
     (a.nom + " " + a.prenom).localeCompare(b.nom + " " + b.prenom, 'fr', {sensitivity:'base'}));
 
-  // Rendu avec émoji ❓/📑 après le nom, et 💸 tout à droite
+  // Rendu
   all.forEach(p => {
     const li = document.createElement("li");
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = `${p.nom} ${p.prenom} (${p.nonFact})`;
     li.appendChild(nameSpan);
+
+    // ⚠️ si rejet de paiement
+    if (p.rejet && p.rejet.trim()) {
+      li.appendChild(makeEmoji("⚠️", "Rejet de paiement"));
+    }
 
     // ❓ si "Ordonnance non scannée"
     if (p.ordNonScan) {
@@ -1411,35 +1416,34 @@ function renderFactureList() {
       li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
     }
 
-    // 💸 tout à droite
+    // 💸 à droite
     const right = document.createElement("span");
     right.className = "right-edge";
 
     const billEmoji = makeEmoji("💸", "Facturer jusqu'à aujourd'hui", ()=>{
-  const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
-  if(!ok) return;
+      const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
+      if(!ok) return;
 
-  const key = keyName(p.nom, p.prenom);
-  const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
-  if (idx !== -1) {
-    patients[idx].lastFactureDate = formatDate(new Date());
-    localStorage.setItem("patients", JSON.stringify(patients));
+      const key = keyName(p.nom, p.prenom);
+      const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
+      if (idx !== -1) {
+        patients[idx].lastFactureDate = formatDate(new Date());
+        localStorage.setItem("patients", JSON.stringify(patients));
 
-    // Ajout du marqueur temporaire (💰 jusqu’à minuit)
-    setBilledToday(key, todayStr());
-  }
+        // Marqueur temporaire (💰 jusqu’à minuit dans l’écran principal)
+        setBilledToday(key, todayStr());
+      }
 
-  // Rafraîchir les écrans
-  renderFactureList();              // supprime de "à facturer"
-  renderPatients(searchInput.value); // met à jour principal (avec 💰)
-  updatePinButton();
-});
-
+      // Rafraîchir les écrans
+      renderFactureList();               // enlève le patient de "à facturer"
+      renderPatients(searchInput.value); // met à jour principal (avec 💰)
+      updatePinButton();
+    });
 
     right.appendChild(billEmoji);
     li.appendChild(right);
 
-    // (Option) Couleur indicative selon le nombre de non facturées (comme avant)
+    // Couleur indicative
     if (p.nonFact > 20)        li.style.color = "red";
     else if (p.nonFact >= 10)  li.style.color = "orange";
     else if (p.nonFact >= 5)   li.style.color = "yellow";
@@ -1449,6 +1453,7 @@ function renderFactureList() {
     ul.appendChild(li);
   });
 }
+
 
 
       // ====== Listes de séances d'un patient (facturées / non facturées / toutes) ======
