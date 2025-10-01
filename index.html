@@ -1393,28 +1393,42 @@ function renderFactureList() {
   all.forEach(p => {
     const li = document.createElement("li");
 
-    const nameSpan = document.createElement("span");
-    nameSpan.textContent = `${p.nom} ${p.prenom} (${p.nonFact})`;
-    li.appendChild(nameSpan);
+    // Groupe gauche: NOM + emojis + (compteur)
+const left = document.createElement("span");
+left.style.display = "inline-flex";
+left.style.alignItems = "center";
+left.style.gap = ".35rem";
 
-    // ⚠️ si rejet de paiement
-    if (p.rejet && p.rejet.trim()) {
-      li.appendChild(makeEmoji("⚠️", "Rejet de paiement"));
-    }
+const nameSpan = document.createElement("span");
+nameSpan.textContent = `${p.nom} ${p.prenom}`;
+left.appendChild(nameSpan);
 
-    // ❓ si "Ordonnance non scannée"
-    if (p.ordNonScan) {
-      li.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e,self)=>{
-        const info = (p.ordDetails||"").trim();
-        const txt = info ? ("ordonnance du " + info) : "Ordonnance non scannée";
-        showTip(li, txt);
-      }));
-    }
+// ⚠️ si rejet de paiement (juste à droite du nom)
+if (p.rejet && p.rejet.trim()) {
+  left.appendChild(makeEmoji("⚠️", "Rejet de paiement"));
+}
 
-    // 📑 si "Ordonnance à renouveler"
-    if (p.ordRenouv) {
-      li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
-    }
+// ❓ si "Ordonnance non scannée"
+if (p.ordNonScan) {
+  left.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e,self)=>{
+    const info = (p.ordDetails||"").trim();
+    const txt = info ? ("ordonnance du " + info) : "Ordonnance non scannée";
+    showTip(li, txt);
+  }));
+}
+
+// 📑 si "Ordonnance à renouveler"
+if (p.ordRenouv) {
+  left.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
+}
+
+// compteur après les emojis
+const countSpan = document.createElement("span");
+countSpan.textContent = `(${p.nonFact})`;
+left.appendChild(countSpan);
+
+li.appendChild(left);
+
 
     // 💸 à droite
     const right = document.createElement("span");
