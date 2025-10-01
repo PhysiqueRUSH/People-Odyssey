@@ -752,17 +752,21 @@ if (countEl) countEl.textContent = `${all.length} patients`;
     const icon = billedNow ? "💰" : "💸";
     const title = billedNow ? "Facturé aujourd'hui" : "Facturer jusqu'à aujourd'hui";
     const billEmoji = makeEmoji(icon, title, billedNow ? null : ()=>{
-      // Action "facturer maintenant"
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      const q = patients[i];
-      if (!q) return;
-      q.lastFactureDate = todayStr();
-      patients[i] = q;
-      localStorage.setItem("patients", JSON.stringify(patients));
-      setBilledToday(k, todayStr()); // affichera 💰 pour aujourd'hui
-      renderPatients(searchInput.value);
-      updatePinButton();
-    });
+  const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
+  if(!ok) return;
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const q = patients[i];
+  if (!q) return;
+  q.lastFactureDate = todayStr();
+  patients[i] = q;
+  localStorage.setItem("patients", JSON.stringify(patients));
+
+  setBilledToday(k, todayStr()); // force 💰 jusqu'à minuit
+  renderPatients(searchInput.value);
+  updatePinButton();
+});
+
     right.appendChild(billEmoji);
   }
 
@@ -1412,18 +1416,25 @@ function renderFactureList() {
     right.className = "right-edge";
 
     const billEmoji = makeEmoji("💸", "Facturer jusqu'à aujourd'hui", ()=>{
-      // 1) Mettre lastFactureDate = aujourd'hui pour ce patient
-      const key = keyName(p.nom, p.prenom);
-      const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
-      if (idx !== -1) {
-        patients[idx].lastFactureDate = formatDate(new Date());
-        localStorage.setItem("patients", JSON.stringify(patients));
-      }
-      // 2) Rafraîchir "À facturer" (le patient disparaît) + mettre à jour l’écran principal & le 📌
-      renderFactureList();
-      renderPatients(searchInput.value);
-      updatePinButton();
-    });
+  const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
+  if(!ok) return;
+
+  const key = keyName(p.nom, p.prenom);
+  const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
+  if (idx !== -1) {
+    patients[idx].lastFactureDate = formatDate(new Date());
+    localStorage.setItem("patients", JSON.stringify(patients));
+
+    // Ajout du marqueur temporaire (💰 jusqu’à minuit)
+    setBilledToday(key, todayStr());
+  }
+
+  // Rafraîchir les écrans
+  renderFactureList();              // supprime de "à facturer"
+  renderPatients(searchInput.value); // met à jour principal (avec 💰)
+  updatePinButton();
+});
+
 
     right.appendChild(billEmoji);
     li.appendChild(right);
