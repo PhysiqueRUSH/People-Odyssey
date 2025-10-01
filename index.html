@@ -522,23 +522,23 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
 
-  <!-- Menu patient -->
-  <div id="patient-menu">
-<div class="menu-box">
-  <button onclick="showInfoScreen()">Informations</button>
-  <button onclick="addPresenceOffset(0)">Présent ce jour</button>
-  <button onclick="addPresenceOffset(1)">Présent demain</button>
-  <!-- SUPPRIMÉS: Présent après-demain / Présent le ... -->
-  <button onclick="showPresenceSelection()">Sélectionner les présences</button>
-<button onclick="closeMenuAndShowFactureList(true)">Liste séances facturées</button>
-<button onclick="closeMenuAndShowFactureList(false)">Liste séances non facturées</button>
-<button onclick="closeMenuAndShowFactureList()">Liste de toutes les séances</button>
-  <button onclick="showLastFactureScreen()">Date de la dernière facturation</button>
-  <!-- AJOUTS -->
-  <button onclick="addToSpecialList()">Ajouter à la liste spéciale</button>
-  <button onclick="renfoDuSoir()">Renfo du soir</button>
-</div>
+<!-- Menu patient -->
+<div id="patient-menu">
+  <div class="menu-box">
+    <button onclick="showInfoScreen()">Informations/Ordonnances/⚠️</button>
+    <button onclick="addPresenceOffset(0)">Présent ce jour</button>
+    <button onclick="addPresenceOffset(1)">Présent demain</button>
+    <button onclick="showPresenceSelection()">Sélectionner les présences</button>
+    <button onclick="closeMenuAndShowFactureList(true)">Liste séances facturées</button>
+    <button onclick="closeMenuAndShowFactureList(false)">Liste séances non facturées</button>
+    <button onclick="closeMenuAndShowFactureList()">Liste de toutes les séances</button>
+    <button onclick="showLastFactureScreen()">Date de la dernière facturation</button>
+    <button onclick="addToSpecialList()">Ajouter à la liste spéciale</button>
+    <button onclick="renfoDuSoir()">Renfo du soir</button>
+    <button onclick="ordonnanceOK()">Ordonnance OK</button>
   </div>
+</div>
+
     <script>
     const patientListEl = document.getElementById("patientList");
     const searchInput = document.getElementById("searchInput");
@@ -932,6 +932,43 @@ function closeMenuAndShowFactureList(mode) {
       }
     });
 
+function ordonnanceOK(){
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  if (selectedPatientIndex == null) return;
+  const p = patients[selectedPatientIndex];
+  if (!p) return;
+
+  // Décocher les deux états d’ordonnance
+  p.ordNonScan = false;
+  p.ordRenouv  = false;
+  // On laisse p.ordDetails tel quel pour mémoire (tu peux le vider si tu préfères).
+
+  patients[selectedPatientIndex] = p;
+  localStorage.setItem("patients", JSON.stringify(patients));
+
+  // Ferme le menu
+  patientMenu.style.display = "none";
+
+  // Rafraîchir l'écran courant (main vs spéciale)
+  const specialVisible = document.getElementById("special-screen").style.display === "block";
+  if (specialVisible) {
+    renderSpecialList();
+  } else {
+    renderPatients(searchInput.value);
+  }
+  updatePinButton();
+
+  // (Optionnel) si l'écran "Informations" est ouvert, décocher visuellement
+  if (document.getElementById("info-screen").style.display === "block") {
+    const cbNon = document.getElementById("info-ord-nonscan");
+    const cbRen = document.getElementById("info-ord-renouv");
+    const det   = document.getElementById("info-ord-details");
+    if (cbNon) cbNon.checked = false;
+    if (cbRen) cbRen.checked = false;
+    if (det)   det.style.display = "none";
+  }
+}
+      
     // --- Sauvegarde infos ---
  function saveInfo() {
   let patients = JSON.parse(localStorage.getItem("patients") || "[]");
@@ -1289,13 +1326,13 @@ function renderFactureList() {
   const titleEl = document.getElementById("facture-title");
   ul.innerHTML = "";
 
-  const todayStr = formatDate(new Date()); // on ignore les séances > aujourd'hui
+  const todayVal = formatDate(new Date()); // on ignore les séances > aujourd'hui
 
   // Calcule le nonFact par patient (en excluant le futur)
   const all = patients.map(p => {
     let nonFact = 0;
     (p.presences || []).forEach(dateStr => {
-      if (compareDates(dateStr, todayStr) <= 0) { // seulement aujourd'hui ou passé
+      if (compareDates(dateStr, todayVal) <= 0) { // seulement aujourd'hui ou passé
         if (!p.lastFactureDate || compareDates(dateStr, p.lastFactureDate) > 0) {
           nonFact++;
         }
@@ -2108,8 +2145,8 @@ document.getElementById("pres-ocr-import-btn").addEventListener("click", importP
 
    // --- Init ---
 showToday();
-showMainScreen();   // garantit un état propre
 cleanupBilledToday();
+showMainScreen();   // garantit un état propre
 updatePinButton();  // colore/clignote le 📌 dès le départ
   </script>
   <script>
