@@ -258,6 +258,19 @@
       bottom:4px;
       right:4px;
     }
+
+/* Montant facturé du jour (calendrier) */
+.calendar-day .day-bill{
+  position:absolute;
+  left:4px;
+  bottom:4px;
+  font-size:0.65rem;
+  opacity:0.9;
+  pointer-events:none;
+  color:#ddd;
+}
+
+    
     /* Intensité de fréquentation (calendrier global) */
 .calendar-day.red    { background:#8b1e1e; color:#fff; }
 .calendar-day.orange { background:#b15b00; color:#fff; }
@@ -673,9 +686,20 @@ function getBilledTodayMap(){
 
 function setBilledToday(k, dateStr, count){
   const m = getBilledTodayMap();
-  m[k] = { date: dateStr, count: typeof count === "number" ? count : 0 };
+
+  // cumul si même jour pour ce patient
+  const prev = m[k];
+  if (prev && typeof prev === "object" && prev.date === dateStr){
+    m[k] = { date: dateStr, count: (prev.count || 0) + (count || 0) };
+  } else {
+    m[k] = { date: dateStr, count: typeof count === "number" ? count : 0 };
+  }
   localStorage.setItem("billedToday", JSON.stringify(m));
+
+  // ► Alimente le journal persistant du jour
+  incrementBillingLog(dateStr, count || 0);
 }
+
 
 function isBilledToday(k){
   const v = getBilledTodayMap()[k];
@@ -695,6 +719,27 @@ function cleanupBilledToday(){
   }
   if (changed) localStorage.setItem("billedToday", JSON.stringify(m));
 }
+
+// --- Journal persistant des facturations par jour ---
+// Structure: { "jj/mm/aaaa": countCumuléCeJour, ... }
+function getBillingLog(){
+  try { return JSON.parse(localStorage.getItem("billingLog") || "{}"); }
+  catch(e){ return {}; }
+}
+function setBillingLog(log){
+  localStorage.setItem("billingLog", JSON.stringify(log));
+}
+function incrementBillingLog(dateStr, count){
+  if (!count) return;
+  const log = getBillingLog();
+  log[dateStr] = (log[dateStr] || 0) + count;
+  setBillingLog(log);
+}
+function getBillingCountForDate(dateStr){
+  const log = getBillingLog();
+  return Number(log[dateStr] || 0);
+}
+      
 
 // Total des séances facturées aujourd'hui (tous patients)
 function getBilledTodayTotalCount(){
@@ -887,6 +932,7 @@ setBilledToday(k, todayStr(), countToBill);
 renderPatients(searchInput.value);
 updatePinButton();
 updateMainTotals();
+        safeRefreshCalendar();
       });
       right.appendChild(billEmoji);
     }
@@ -1318,6 +1364,17 @@ function addPresenceOffset(offset) {
           dayEl.appendChild(pastille);
         }
 
+// Montant facturé ce jour (permanent)
+const billedCount = getBillingCountForDate(dateStr);
+if (billedCount > 0){
+  const euros = Math.round(billedCount * 18.2);
+  const bill = document.createElement("div");
+  bill.className = "day-bill";
+  bill.textContent = `💰 ${euros.toLocaleString('fr-FR')} €`;
+  dayEl.appendChild(bill);
+}
+
+        
         dayEl.onclick = () => showDayScreen(dateStr);
         gridEl.appendChild(dayEl);
       }
@@ -1621,6 +1678,7 @@ renderFactureList();
 renderPatients(searchInput.value);
 updatePinButton();
 updateMainTotals();
+      safeRefreshCalendar();
 
     });
 
@@ -2430,6 +2488,11 @@ function updateMainTotals(){
   right.textContent = `Total💰 : ${euros.toLocaleString('fr-FR')} €`;
 }
 
+function safeRefreshCalendar(){
+  const scr = document.getElementById("calendar-screen");
+  if (scr && scr.style.display === "block") renderCalendar();
+}
+  
 
  let __mergeChosenKey = null; // keyName du patient coché
 
