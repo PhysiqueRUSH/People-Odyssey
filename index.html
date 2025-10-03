@@ -283,13 +283,15 @@
 /* Montant facturé du jour (calendrier) */
 .calendar-day .day-bill{
   position:absolute;
+  top:2px;
   left:4px;
-  bottom:4px;
-  font-size:0.65rem;
-  opacity:0.9;
+  font-size:.62rem;
+  line-height:1;
+  opacity:.9;
   pointer-events:none;
   color:#ddd;
 }
+
 
     
     /* Intensité de fréquentation (calendrier global) */
@@ -718,8 +720,6 @@ function setBilledToday(k, dateStr, count){
   }
   localStorage.setItem("billedToday", JSON.stringify(m));
 
-  // ► Alimente le journal persistant du jour
-  incrementBillingLog(dateStr, count || 0);
 }
 
 
@@ -740,26 +740,6 @@ function cleanupBilledToday(){
     if (vDate !== t){ delete m[k]; changed = true; }
   }
   if (changed) localStorage.setItem("billedToday", JSON.stringify(m));
-}
-
-// --- Journal persistant des facturations par jour ---
-// Structure: { "jj/mm/aaaa": countCumuléCeJour, ... }
-function getBillingLog(){
-  try { return JSON.parse(localStorage.getItem("billingLog") || "{}"); }
-  catch(e){ return {}; }
-}
-function setBillingLog(log){
-  localStorage.setItem("billingLog", JSON.stringify(log));
-}
-function incrementBillingLog(dateStr, count){
-  if (!count) return;
-  const log = getBillingLog();
-  log[dateStr] = (log[dateStr] || 0) + count;
-  setBillingLog(log);
-}
-function getBillingCountForDate(dateStr){
-  const log = getBillingLog();
-  return Number(log[dateStr] || 0);
 }
 
       // --- Journal PERSISTANT des facturations par jour ---
@@ -1501,12 +1481,7 @@ function renderCalendar() {
       if (presenceMonth > 11) { presenceMonth = 0; presenceYear++; }
       renderPresenceCalendar();
     }
-    function savePresenceSelection() {
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      patients[selectedPatientIndex].presences = Array.from(presenceSelection);
-      localStorage.setItem("patients", JSON.stringify(patients));
-      showMainScreen();
-    }
+
           // --- Liste des patients d'une journée ---
     function updateDayTitle(dateStr) {
       const total = countPresences(dateStr);
@@ -1732,7 +1707,7 @@ if (idx !== -1) {
 
   // p.nonFact = nb de séances facturées maintenant
   setBilledToday(key, todayStr(), p.nonFact);
-  addBillingToJournal(todayStr(), p.nonFact)
+  addBillingToJournal(todayStr(), p.nonFact);
 }
 
 renderFactureList();
