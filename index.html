@@ -26,12 +26,70 @@
   background: #112b55;
 }
     .container { padding: 1rem; }
-    .today-date {
-      font-size: 0.8rem;
-      color: #ccc;
-      margin-bottom: 0.3rem;
-      text-align: left;
-    }
+    .today-date{
+  font-size: 0.8rem;
+  color: #ccc;
+  margin-bottom: 0.3rem;
+  text-align: center;     /* centré */
+  font-weight: bold;      /* en gras */
+}
+
+    #totals-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  font-size:0.8rem;       /* même taille que la date */
+  color:#ccc;
+  margin-bottom:.6rem;
+}
+
+
+/* modal de fusion (mêmes bases que le menu patient) */
+#merge-modal{
+  display:none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+#merge-modal .menu-box{
+  background:#112b55;
+  border-radius:8px;
+  padding:1rem;
+  width:90%;
+  max-width:520px;
+}
+#merge-search{
+  width:100%;
+  margin-bottom:.6rem;
+  padding:.6rem;
+  border:none;
+  border-radius:6px;
+}
+#merge-list{
+  max-height:45vh;
+  overflow:auto;
+  border:1px solid #274b8a;
+  border-radius:6px;
+  padding:.4rem;
+  background:#0e2347;
+}
+#merge-actions{
+  display:flex;
+  gap:.5rem;
+  margin-top:.6rem;
+}
+#merge-actions button{
+  background:#1f3f7a;
+  border:none;
+  padding:.5rem 1rem;
+  border-radius:6px;
+  color:#fff;
+  cursor:pointer;
+}
+    
     .search-bar { display: flex; margin-bottom: .5rem; }
     .search-bar input { flex: 1; padding: .6rem; border:none; border-radius:6px; }
     .actions { display:flex; justify-content:space-between; margin-bottom:1rem; }
@@ -352,6 +410,10 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
   <!-- Écran principal -->
   <div id="main-screen" class="container">
     <div class="today-date" id="todayDate"></div>
+    <div id="totals-row">
+  <span id="totals-left">Total ⚠️❓📑 : 0</span>
+  <span id="totals-right">Total💰 : ≈ 0 €</span>
+</div>
     <div class="search-bar">
   <button id="clearSearchBtn" class="clear-btn" title="Effacer la recherche" onclick="clearMainSearch()">❌</button>
   <input type="text" id="searchInput" placeholder="Rechercher un patient...">
@@ -561,6 +623,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     <button onclick="addToSpecialList()">Ajouter à la liste spéciale</button>
     <button onclick="renfoDuSoir()">Renfo du soir</button>
     <button onclick="ordonnanceOK()">Ordonnance OK</button>
+    <button onclick="showMergeModal()">Fusionner avec . . .</button>
   </div>
 </div>
 
@@ -607,7 +670,8 @@ function cleanupBilledToday(){ const m=getBilledTodayMap(); const t=todayStr(); 
 }
 
 // --- Info-bulle de 2s sur un <li> ---
-function showTip(li, text){
+// Info-bulle de N ms (par défaut 2000ms)
+function showTip(li, text, ms = 2000){
   if(!li) return;
   const old = li.querySelector(".tooltip-bubble");
   if(old) old.remove();
@@ -615,8 +679,9 @@ function showTip(li, text){
   tip.className="tooltip-bubble";
   tip.textContent = text;
   li.appendChild(tip);
-  setTimeout(()=>{ tip.remove(); }, 2000);
+  setTimeout(()=>{ tip.remove(); }, ms);
 }
+
 
 
     // Normaliser une date entrée par l'utilisateur (jj/mm/aa → jj/mm/aaaa)
@@ -686,96 +751,104 @@ function sortPatients(arr) {
 function renderPatients(filter = "") {
   const all = JSON.parse(localStorage.getItem("patients") || "[]");
   patientListEl.innerHTML = "";
-  // met à jour le total global de patients (non filtré)
-const countEl = document.getElementById("patientCount");
-if (countEl) countEl.textContent = `${all.length} patients`;
 
+  // compteur global non filtré
+  const countEl = document.getElementById("patientCount");
+  if (countEl) countEl.textContent = `${all.length} patients`;
 
-  // Conserve l'index original i (sert pour les tris par ordre d'ajout)
+  // Filtrage + index d'ajout
   let rows = all
     .map((p, i) => ({ p, i }))
     .filter(({ p }) => (p.nom + " " + p.prenom).toLowerCase().includes(filter.toLowerCase()));
 
-  // Appliquer le tri selon sortMode
+  // Tri
   rows = sortPatients(rows);
 
- rows.forEach(({ p, i }) => {
-  const li = document.createElement("li");
+  rows.forEach(({ p, i }) => {
+    const li = document.createElement("li");
 
-  // bouton corbeille (avec confirmation déjà gérée par deletePatient)
-  const deleteBtn = document.createElement("button");
-  deleteBtn.innerHTML = "🗑️";
-  deleteBtn.className = "delete-btn";
-  deleteBtn.onclick = (e) => { e.stopPropagation(); deletePatient(i); };
+    // corbeille
+    const deleteBtn = document.createElement("button");
+    deleteBtn.innerHTML = "🗑️";
+    deleteBtn.className = "delete-btn";
+    deleteBtn.onclick = (e) => { e.stopPropagation(); deletePatient(i); };
 
-  const nameSpan = document.createElement("span");
-  nameSpan.textContent = p.nom + " " + p.prenom;
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = p.nom + " " + p.prenom;
 
-  // Icônes en ligne (après le nom), dans l'ordre demandé :
-  // 1) 🙋 si présent aujourd'hui
-  if (isPresentToday(p)) {
+    // Présence du jour 🙋 juste après le nom si présent
     li.appendChild(deleteBtn);
     li.appendChild(nameSpan);
-    li.appendChild(makeEmoji("🙋", "Présent aujourd'hui"));
-  } else {
-    li.appendChild(deleteBtn);
-    li.appendChild(nameSpan);
-  }
+    if (isPresentToday(p)) {
+      li.appendChild(makeEmoji("🙋", "Présent aujourd'hui"));
+    }
 
-  // 2) ⚠️ si rejet
-  if (p.rejet && p.rejet.trim() !== "") {
-    li.appendChild(makeEmoji("⚠️", "Rejet de paiement"));
-  }
+    // ⚠️ cliquable → bulle 3s avec le motif
+    if (p.rejet && p.rejet.trim() !== "") {
+      li.appendChild(makeEmoji("⚠️", "Rejet de paiement", () => {
+        const txt = `Rejet: ${(p.rejet||"").trim()}`;
+        showTip(li, txt, 3000);
+      }));
+    }
 
-  // 3) ❓ si "Ordonnance non scannée" (cliquable -> bulle 2s)
-  if (p.ordNonScan) {
-    li.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e, self)=>{
-      const info = (p.ordDetails||"").trim();
-      const txt = info ? ("ordonnance du " + info) : "Ordonnance non scannée";
-      showTip(li, txt);
-    }));
-  }
+    // ❓ Ordonnance non scannée → bulle 2s (inchangé)
+    if (p.ordNonScan) {
+      li.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e,self)=>{
+        const info = (p.ordDetails||"").trim();
+        const txt = info ? ("ordonnance du " + info) : "Ordonnance non scannée";
+        showTip(li, txt, 2000);
+      }));
+    }
 
-  // 4) 📑 si "Ordonnance à renouveler"
-  if (p.ordRenouv) {
-    li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
-  }
+    // 📑 Ordonnance à renouveler
+    if (p.ordRenouv) {
+      li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
+    }
 
-  // 5) tout à droite : 💸 / 💰 (facturation rapide)
-  const right = document.createElement("span");
-  right.className = "right-edge";
+    // 💬 Notes → bulle 4s avec le contenu
+    if (p.notes && p.notes.trim() !== "") {
+      li.appendChild(makeEmoji("💬", "Notes", ()=>{
+        showTip(li, (p.notes||"").trim(), 4000);
+      }));
+    }
 
-  const k = patientKey(p);
-  const hasNonFact = nonFactCount(p) > 0;
-  if (hasNonFact || isBilledToday(k)) {
-    const billedNow = isBilledToday(k);
-    const icon = billedNow ? "💰" : "💸";
-    const title = billedNow ? "Facturé aujourd'hui" : "Facturer jusqu'à aujourd'hui";
-    const billEmoji = makeEmoji(icon, title, billedNow ? null : ()=>{
-  const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
-  if(!ok) return;
+    // bord droit : 💸 / 💰 (facturation rapide)
+    const right = document.createElement("span");
+    right.className = "right-edge";
+    const k = patientKey(p);
+    const hasNonFact = nonFactCount(p) > 0;
+    if (hasNonFact || isBilledToday(k)) {
+      const billedNow = isBilledToday(k);
+      const icon = billedNow ? "💰" : "💸";
+      const title = billedNow ? "Facturé aujourd'hui" : "Facturer jusqu'à aujourd'hui";
+      const billEmoji = makeEmoji(icon, title, billedNow ? null : ()=>{
+        const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
+        if(!ok) return;
 
-  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-  const q = patients[i];
-  if (!q) return;
-  q.lastFactureDate = todayStr();
-  patients[i] = q;
-  localStorage.setItem("patients", JSON.stringify(patients));
+        const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+        const q = patients[i];
+        if (!q) return;
+        q.lastFactureDate = todayStr();
+        patients[i] = q;
+        localStorage.setItem("patients", JSON.stringify(patients));
 
-  setBilledToday(k, todayStr()); // force 💰 jusqu'à minuit
-  renderPatients(searchInput.value);
-  updatePinButton();
-});
+        setBilledToday(k, todayStr());  // 💰 jusqu'à minuit
+        renderPatients(searchInput.value);
+        updatePinButton();
+        updateMainTotals();
+      });
+      right.appendChild(billEmoji);
+    }
 
-    right.appendChild(billEmoji);
-  }
+    li.appendChild(right);
 
-  li.appendChild(right);
+    // clic ligne → menu patient
+    li.onclick = () => showPatientMenu(i);
+    patientListEl.appendChild(li);
+  });
 
-  // Ouvrir le menu patient au clic
-  li.onclick = () => showPatientMenu(i);
-  patientListEl.appendChild(li);
-});
+  // Met à jour la ligne des totaux
+  updateMainTotals();
 }
 
 
@@ -814,6 +887,8 @@ function deletePatient(index) {
   patients.splice(index, 1);
   localStorage.setItem("patients", JSON.stringify(patients));
   renderPatients(searchInput.value);
+  updatePinButton();
+  updateMainTotals();
 }
 
 
@@ -837,12 +912,13 @@ function deletePatient(index) {
   }
 }
 
-    function showMainScreen() {
-      hideAll();
-      document.getElementById("main-screen").style.display = "block";
-      renderPatients(searchInput.value);
-      updatePinButton();
-    }
+function showMainScreen() {
+  hideAll();
+  document.getElementById("main-screen").style.display = "block";
+  renderPatients(searchInput.value); // appelle updateMainTotals() à la fin
+  updatePinButton();
+}
+
 
 function clearMainSearch(){
   searchInput.value = "";
@@ -1080,16 +1156,28 @@ if(!p.ordNonScan) p.ordDetails = (p.ordDetails||""); // on conserve ce que tu as
 
 
     // --- Ajout présence rapide ---
-    function addPresenceOffset(offset) {
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      const p = patients[selectedPatientIndex];
-      const d = new Date();
-      d.setDate(d.getDate() + offset);
-      const dateStr = formatDate(d);
-      if (!p.presences.includes(dateStr)) p.presences.push(dateStr);
-      localStorage.setItem("patients", JSON.stringify(patients));
-      patientMenu.style.display = "none";
-    }
+function addPresenceOffset(offset) {
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  const dateStr = formatDate(d);
+
+  if (!p.presences.includes(dateStr)) p.presences.push(dateStr);
+  localStorage.setItem("patients", JSON.stringify(patients));
+  patientMenu.style.display = "none";
+
+  // 👉 Rafraîchir immédiatement l'écran visible
+  const specialVisible = document.getElementById("special-screen").style.display === "block";
+  if (specialVisible) {
+    renderSpecialList();
+  } else {
+    renderPatients(searchInput.value);
+  }
+  updatePinButton();
+  updateMainTotals();
+}
+
 
     // --- Ajout présence par date ---
     function savePresenceByDate() {
@@ -1385,7 +1473,7 @@ function renderFactureList() {
     estimateEl.textContent = `soit environ ${euros.toLocaleString('fr-FR')} € à récupérer`;
   }
 
-  // Tri : plus de nonFact d'abord, puis alpha
+  // Tri
   all.sort((a,b) => (b.nonFact - a.nonFact) ||
     (a.nom + " " + a.prenom).localeCompare(b.nom + " " + b.prenom, 'fr', {sensitivity:'base'}));
 
@@ -1393,42 +1481,41 @@ function renderFactureList() {
   all.forEach(p => {
     const li = document.createElement("li");
 
-    // Groupe gauche: NOM + emojis + (compteur)
-const left = document.createElement("span");
-left.style.display = "inline-flex";
-left.style.alignItems = "center";
-left.style.gap = ".35rem";
+    // 👁️‍🗨️ à gauche : ouvre la liste des non facturées de ce patient
+    const eye = makeEmoji("👁️‍🗨️", "Voir détails non facturés", ()=>{
+      const key = keyName(p.nom, p.prenom);
+      const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
+      if (idx !== -1) {
+        selectedPatientIndex = idx;
+        showFactureList(false); // écran des séances non facturées (chronologique + bouton retour)
+      }
+    });
+    li.appendChild(eye);
 
-const nameSpan = document.createElement("span");
-nameSpan.textContent = `${p.nom} ${p.prenom}`;
-left.appendChild(nameSpan);
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = `${p.nom} ${p.prenom} (${p.nonFact})`;
+    li.appendChild(nameSpan);
 
-// ⚠️ si rejet de paiement (juste à droite du nom)
-if (p.rejet && p.rejet.trim()) {
-  left.appendChild(makeEmoji("⚠️", "Rejet de paiement"));
-}
+    // ⚠️ si rejet de paiement (cliquable -> bulle 3s)
+    if (p.rejet && p.rejet.trim()) {
+      li.appendChild(makeEmoji("⚠️", "Rejet de paiement", ()=>{
+        showTip(li, `Rejet: ${(p.rejet||"").trim()}`, 3000);
+      }));
+    }
 
-// ❓ si "Ordonnance non scannée"
-if (p.ordNonScan) {
-  left.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e,self)=>{
-    const info = (p.ordDetails||"").trim();
-    const txt = info ? ("ordonnance du " + info) : "Ordonnance non scannée";
-    showTip(li, txt);
-  }));
-}
+    // ❓ si "Ordonnance non scannée"
+    if (p.ordNonScan) {
+      li.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e,self)=>{
+        const info = (p.ordDetails||"").trim();
+        const txt = info ? ("ordonnance du " + info) : "Ordonnance non scannée";
+        showTip(li, txt, 2000);
+      }));
+    }
 
-// 📑 si "Ordonnance à renouveler"
-if (p.ordRenouv) {
-  left.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
-}
-
-// compteur après les emojis
-const countSpan = document.createElement("span");
-countSpan.textContent = `(${p.nonFact})`;
-left.appendChild(countSpan);
-
-li.appendChild(left);
-
+    // 📑 si "Ordonnance à renouveler"
+    if (p.ordRenouv) {
+      li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
+    }
 
     // 💸 à droite
     const right = document.createElement("span");
@@ -1444,14 +1531,13 @@ li.appendChild(left);
         patients[idx].lastFactureDate = formatDate(new Date());
         localStorage.setItem("patients", JSON.stringify(patients));
 
-        // Marqueur temporaire (💰 jusqu’à minuit dans l’écran principal)
         setBilledToday(key, todayStr());
       }
 
-      // Rafraîchir les écrans
-      renderFactureList();               // enlève le patient de "à facturer"
-      renderPatients(searchInput.value); // met à jour principal (avec 💰)
+      renderFactureList();
+      renderPatients(searchInput.value);
       updatePinButton();
+      updateMainTotals();
     });
 
     right.appendChild(billEmoji);
@@ -2235,6 +2321,183 @@ document.getElementById("pres-ocr-process-btn").addEventListener("click", proces
 document.getElementById("pres-ocr-import-btn").addEventListener("click", importPresenceDatesChecked);
 
 
+function globalNonFactCount(){
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  return patients.reduce((sum, p) => sum + nonFactCount(p), 0);
+}
+function globalAlertCount(){
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  let c = 0;
+  patients.forEach(p=>{
+    if (p.rejet && p.rejet.trim()) c++;       // ⚠️
+    if (p.ordNonScan) c++;                    // ❓
+    if (p.ordRenouv)  c++;                    // 📑
+  });
+  return c;
+}
+function updateMainTotals(){
+  const left = document.getElementById("totals-left");
+  const right = document.getElementById("totals-right");
+  if(!left || !right) return;
+
+  const alerts = globalAlertCount();
+  const sessions = globalNonFactCount();
+  const euros = Math.round(sessions * 18.2);
+
+  left.textContent  = `Total ⚠️❓📑 : ${alerts}`;
+  right.textContent = `Total💰 : ≈ ${euros.toLocaleString('fr-FR')} €`;
+}
+
+ let __mergeChosenKey = null; // keyName du patient coché
+
+function showMergeModal(){
+  // liste tous les autres patients sauf le sélectionné
+  const modal = document.getElementById("merge-modal");
+  if (!modal) return;
+
+  __mergeChosenKey = null;
+  document.getElementById("merge-search").value = "";
+  renderMergeList("");
+
+  modal.style.display = "flex";
+}
+function closeMergeModal(){
+  const modal = document.getElementById("merge-modal");
+  if (modal) modal.style.display = "none";
+}
+
+// Render de la liste avec filtre en temps réel
+function renderMergeList(query){
+  const list = document.getElementById("merge-list");
+  list.innerHTML = "";
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const sourceIdx = selectedPatientIndex;
+  const source = patients[sourceIdx];
+  const q = (query||"").toLowerCase();
+
+  patients.forEach((p, i)=>{
+    if (i === sourceIdx) return; // exclure lui-même
+    const full = (p.nom + " " + p.prenom).toLowerCase();
+    if (q && !full.includes(q)) return;
+
+    const k = keyName(p.nom, p.prenom);
+
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.gap = ".5rem";
+    row.style.padding = ".3rem 0";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = (__mergeChosenKey === k);
+    cb.addEventListener("change", ()=>{
+      // checkbox unique : si on coche celle-ci, on décoche toutes les autres
+      __mergeChosenKey = cb.checked ? k : null;
+      renderMergeList(document.getElementById("merge-search").value);
+    });
+
+    const label = document.createElement("span");
+    label.textContent = `${p.nom} ${p.prenom}`;
+
+    row.appendChild(cb);
+    row.appendChild(label);
+    list.appendChild(row);
+  });
+
+  // bind recherche une seule fois
+  const inp = document.getElementById("merge-search");
+  if (inp && !inp.__bound){
+    inp.addEventListener("input", (e)=>{
+      renderMergeList(e.target.value);
+    });
+    inp.__bound = true;
+  }
+}
+
+      function confirmMergeSelection(){
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const srcIdx = selectedPatientIndex;
+  if (srcIdx == null) { alert("Aucun patient sélectionné."); return; }
+
+  if (!__mergeChosenKey){
+    alert("Sélectionne un patient avec qui fusionner.");
+    return;
+  }
+
+  const dstIdx = patients.findIndex(p => keyName(p.nom, p.prenom) === __mergeChosenKey);
+  if (dstIdx === -1){ alert("Sélection invalide."); return; }
+
+  const A = patients[srcIdx];
+  const B = patients[dstIdx];
+
+  // Choix du nom à conserver (boîte simple : OK = garder A, Annuler = garder B)
+  const keepA = confirm(
+    `Fusionner:\nA) ${A.nom} ${A.prenom}\nB) ${B.nom} ${B.prenom}\n\n` +
+    `OK = Conserver le nom de A\nAnnuler = Conserver le nom de B`
+  );
+
+  doMergePatients(srcIdx, dstIdx, keepA ? "A" : "B");
+}
+
+function doMergePatients(idxA, idxB, keep = "A"){
+  let patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  if (idxA === idxB) return;
+
+  const A = patients[idxA];
+  const B = patients[idxB];
+
+  // Déterminer le "cible" (C) et le "absorbé" (D)
+  let C, D, cIdx, dIdx;
+  if (keep === "A"){ C = A; D = B; cIdx = idxA; dIdx = idxB; }
+  else             { C = B; D = A; cIdx = idxB; dIdx = idxA; }
+
+  // Fusion des présences (unique)
+  const set = new Set([...(C.presences||[]), ...(D.presences||[])]);
+  C.presences = Array.from(set);
+
+  // lastFactureDate = plus récente
+  if (D.lastFactureDate){
+    if (!C.lastFactureDate || compareDates(D.lastFactureDate, C.lastFactureDate) > 0){
+      C.lastFactureDate = D.lastFactureDate;
+    }
+  }
+
+  // phone / rejet / notes : si vide côté C, prends D (sinon concat notes)
+  if ((!C.phone || !C.phone.trim()) && D.phone) C.phone = D.phone;
+  if ((!C.rejet || !C.rejet.trim()) && D.rejet) C.rejet = D.rejet;
+  if (D.notes && D.notes.trim()){
+    if (!C.notes || !C.notes.trim()) C.notes = D.notes;
+    else if (C.notes.trim() !== D.notes.trim()) C.notes = `${C.notes} | ${D.notes}`;
+  }
+
+  // Ordonnances : OR logique pour les flags, détails si vide
+  C.ordNonScan = !!(C.ordNonScan || D.ordNonScan);
+  C.ordRenouv  = !!(C.ordRenouv  || D.ordRenouv );
+  if ((!C.ordDetails || !C.ordDetails.trim()) && D.ordDetails) C.ordDetails = D.ordDetails;
+
+  // Éventuellement, si keep == "B", on copie le nom/prénom de B sur C (déjà fait car C=B dans ce cas)
+  // Supprimer D
+  patients.splice(dIdx, 1);
+
+  // Réécrire C
+  patients[cIdx > dIdx ? cIdx - 1 : cIdx] = C;
+
+  localStorage.setItem("patients", JSON.stringify(patients));
+
+  closeMergeModal();
+  // si la fiche absorbée était dans la liste spéciale, nettoyer
+  const keys = getSpecialKeys().filter(k => keyName(C.nom, C.prenom) === k || keyName(D.nom, D.prenom) !== k);
+  setSpecialKeys(keys);
+
+  // rafraîchir les écrans/compteurs
+  showMainScreen();
+  updatePinButton();
+  updateMainTotals();
+}
+
+
    // --- Init ---
 showToday();
 cleanupBilledToday();
@@ -2250,5 +2513,19 @@ updatePinButton();  // colore/clignote le 📌 dès le départ
     });
   }
   </script>
+  
+  <!-- Modal Fusion -->
+<div id="merge-modal">
+  <div class="menu-box">
+    <h3>Fusionner avec...</h3>
+    <input id="merge-search" type="text" placeholder="Rechercher un patient... (filtre en temps réel)">
+    <div id="merge-list"></div>
+    <div id="merge-actions">
+      <button onclick="confirmMergeSelection()">Valider</button>
+      <button onclick="closeMergeModal()">Annuler</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
