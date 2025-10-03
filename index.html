@@ -259,6 +259,27 @@
       right:4px;
     }
 
+  /* Montant facturé du jour dans la case calendrier (petit, en haut-gauche) */
+.day-bill{
+  position:absolute;
+  top:2px;
+  left:4px;
+  font-size:.62rem;   /* plus petit pour ne pas masquer le numéro du jour */
+  line-height:1;
+  opacity:.9;
+  pointer-events:none; /* ne gêne pas le clic sur la case */
+}
+
+/* Total mensuel sous le calendrier (avec un petit espacement) */
+#calendar-month-total{
+  margin-top:.6rem;
+  margin-bottom:.6rem;
+  font-size:.95rem;
+  color:#ddd;
+  font-style:italic;
+}
+  
+
 /* Montant facturé du jour (calendrier) */
 .calendar-day .day-bill{
   position:absolute;
@@ -487,6 +508,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
       <div>Lun</div><div>Mar</div><div>Mer</div><div>Jeu</div><div>Ven</div><div>Sam</div><div>Dim</div>
     </div>
     <div class="calendar-grid" id="calendar-grid"></div>
+    <div id="calendar-month-total"></div>
     <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
   </div>
 
@@ -739,6 +761,36 @@ function getBillingCountForDate(dateStr){
   const log = getBillingLog();
   return Number(log[dateStr] || 0);
 }
+
+      // --- Journal PERSISTANT des facturations par jour ---
+// Stockage: { "dd/mm/aaaa": nombre_de_seances_facturees_ce_jour, ... }
+function getBillingJournal(){
+  try { return JSON.parse(localStorage.getItem("billingJournalV1") || "{}"); }
+  catch(e){ return {}; }
+}
+function saveBillingJournal(j){
+  localStorage.setItem("billingJournalV1", JSON.stringify(j));
+}
+function addBillingToJournal(dateStr, count){
+  if (!count || count <= 0) return;
+  const j = getBillingJournal();
+  j[dateStr] = (j[dateStr] || 0) + count;
+  saveBillingJournal(j);
+}
+function getBillingCountForDate(dateStr){
+  const j = getBillingJournal();
+  return j[dateStr] || 0;
+}
+// Somme des facturations d'un mois (0-11)
+function getMonthBillingSum(year, monthZeroBased){
+  let total = 0;
+  const lastDay = new Date(year, monthZeroBased + 1, 0).getDate();
+  for (let d = 1; d <= lastDay; d++){
+    const ds = formatDate(new Date(year, monthZeroBased, d)); // "dd/mm/yyyy"
+    total += getBillingCountForDate(ds);
+  }
+  return total;
+}
       
 
 // Total des séances facturées aujourd'hui (tous patients)
@@ -928,7 +980,7 @@ localStorage.setItem("patients", JSON.stringify(patients));
 
 // mémorise pour le total du jour (💰)
 setBilledToday(k, todayStr(), countToBill);
-
+addBillingToJournal(todayStr(), countToBill);
 renderPatients(searchInput.value);
 updatePinButton();
 updateMainTotals();
@@ -1672,6 +1724,7 @@ if (idx !== -1) {
 
   // p.nonFact = nb de séances facturées maintenant
   setBilledToday(key, todayStr(), p.nonFact);
+  addBillingToJournal(todayStr(), p.nonFact)
 }
 
 renderFactureList();
