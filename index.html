@@ -1369,68 +1369,76 @@ function addPresenceOffset(offset) {
       showMainScreen();
     }
           // --- Calendrier global ---
-    function renderCalendar() {
-      const titleEl = document.getElementById("calendar-title");
-      const gridEl = document.getElementById("calendar-grid");
+function renderCalendar() {
+  const titleEl = document.getElementById("calendar-title");
+  const gridEl = document.getElementById("calendar-grid");
 
-      const today = new Date();
-      if (currentYear === undefined) {
-        currentYear = today.getFullYear();
-        currentMonth = today.getMonth();
-      }
+  const today = new Date();
+  if (currentYear === undefined) {
+    currentYear = today.getFullYear();
+    currentMonth = today.getMonth();
+  }
 
-      const firstDay = new Date(currentYear, currentMonth, 1);
-      const lastDay = new Date(currentYear, currentMonth + 1, 0);
-      const monthName = firstDay.toLocaleString("fr-FR", { month: "long" });
+  const firstDay = new Date(currentYear, currentMonth, 1);
+  const lastDay = new Date(currentYear, currentMonth + 1, 0);
+  const monthName = firstDay.toLocaleString("fr-FR", { month: "long" });
 
-      titleEl.textContent = monthName + " " + currentYear;
-      gridEl.innerHTML = "";
+  titleEl.textContent = monthName + " " + currentYear;
+  gridEl.innerHTML = "";
 
-      const startDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
-      for (let i = 0; i < startDay; i++) {
-        gridEl.appendChild(document.createElement("div"));
-      }
+  const startDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+  for (let i = 0; i < startDay; i++) {
+    gridEl.appendChild(document.createElement("div"));
+  }
 
-      for (let d = 1; d <= lastDay.getDate(); d++) {
-        const date = new Date(currentYear, currentMonth, d);
-        const dateStr = formatDate(date);
-        const count = countPresences(dateStr);
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    const date = new Date(currentYear, currentMonth, d);
+    const dateStr = formatDate(date);
+    const count = countPresences(dateStr);
 
-        const dayEl = document.createElement("div");
-        dayEl.className = "calendar-day";
-        dayEl.textContent = d;
+    const dayEl = document.createElement("div");
+    dayEl.className = "calendar-day";
+    dayEl.textContent = d;
 
-        if (count > 40) dayEl.classList.add("red");
-        else if (count >= 35) dayEl.classList.add("orange");
-        else if (count >= 5) dayEl.classList.add("green");
-        else if (count >= 1) dayEl.classList.add("blue");
+    if (count > 40) dayEl.classList.add("red");
+    else if (count >= 35) dayEl.classList.add("orange");
+    else if (count >= 5) dayEl.classList.add("green");
+    else if (count >= 1) dayEl.classList.add("blue");
 
-        // Pastille facturation
-        const pct = facturePercentage(dateStr);
-        if (pct !== null) {
-          const pastille = document.createElement("div");
-          pastille.className = "pastille";
-          if (pct === 0) pastille.style.background = "darkgreen";
-          else if (pct > 50) pastille.style.background = "red";
-          else if (pct > 0) pastille.style.background = "orange";
-          dayEl.appendChild(pastille);
-        }
+    // Pastille facturation (bas-droite)
+    const pct = facturePercentage(dateStr);
+    if (pct !== null) {
+      const pastille = document.createElement("div");
+      pastille.className = "pastille";
+      if (pct === 0) pastille.style.background = "darkgreen";
+      else if (pct > 50) pastille.style.background = "red";
+      else if (pct > 0) pastille.style.background = "orange";
+      dayEl.appendChild(pastille);
+    }
 
-// Montant facturé ce jour (permanent)
-const billedCount = getBillingCountForDate(dateStr);
-if (billedCount > 0){
-  const euros = Math.round(billedCount * 18.2);
-  const bill = document.createElement("div");
-  bill.className = "day-bill";
-  bill.textContent = `💰 ${euros.toLocaleString('fr-FR')} €`;
-  dayEl.appendChild(bill);
+    // Montant facturé de CE jour (journal persistant) — en haut-gauche
+    const billedCount = getBillingCountForDate(dateStr);
+    if (billedCount > 0) {
+      const euros = Math.round(billedCount * 18.2);
+      const bill = document.createElement("div");
+      bill.className = "day-bill";
+      bill.textContent = `💰 ${euros.toLocaleString('fr-FR')} €`;
+      dayEl.appendChild(bill);
+    }
+
+    dayEl.onclick = () => showDayScreen(dateStr);
+    gridEl.appendChild(dayEl);
+  }
+
+  // Total mensuel (persistant) sous le calendrier
+  const monthCount = getMonthBillingSum(currentYear, currentMonth);
+  const monthEuros = Math.round(monthCount * 18.2);
+  const monthEl = document.getElementById("calendar-month-total");
+  if (monthEl) {
+    monthEl.textContent = `Total du mois : ${monthEuros.toLocaleString('fr-FR')} €`;
+  }
 }
 
-        
-        dayEl.onclick = () => showDayScreen(dateStr);
-        gridEl.appendChild(dayEl);
-      }
-    }
     function prevMonth() {
       currentMonth--;
       if (currentMonth < 0) { currentMonth = 11; currentYear--; }
