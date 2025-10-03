@@ -489,7 +489,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
 <div id="patient-sessions-screen" class="container" style="display:none;">
   <h3 id="patient-sessions-title"></h3>
   <ul id="patient-sessions-list"></ul>
-  <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  <button class="back-btn" onclick="backFromPatientSessions()">↩ Retour</button>
 </div>
 
 
@@ -639,6 +639,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     let selectedPatientIndex = null;
     let presenceSelection = new Set();
     let currentDayView = null;
+    let sessionsBackTarget = "main"; // "main" ou "facture"
 
     // --- Utilitaires syntaxe des noms ---
 function normName(s){return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z'’ -]/g,"").replace(/\s+/g," ").trim();}
@@ -661,13 +662,57 @@ function addDaysFR(dateStr, n){
 function patientKey(p){ return keyName(p.nom||"", p.prenom||""); }
 
 // --- Stockage éphémère "facturé aujourd'hui" -> 💰 reste visible toute la journée ---
-function getBilledTodayMap(){ try{return JSON.parse(localStorage.getItem("billedToday")||"{}");}catch(e){return {};} }
-function setBilledToday(k, dateStr){ const m=getBilledTodayMap(); m[k]=dateStr; localStorage.setItem("billedToday", JSON.stringify(m)); }
-function isBilledToday(k){ return getBilledTodayMap()[k]===todayStr(); }
-function cleanupBilledToday(){ const m=getBilledTodayMap(); const t=todayStr(); let changed=false;
-  for(const k in m){ if(m[k]!==t){ delete m[k]; changed=true; } }
-  if(changed) localStorage.setItem("billedToday", JSON.stringify(m));
+// --- Stockage éphémère "facturé aujourd'hui" ---
+// Nouveau format: { [keyName]: { date: "jj/mm/aaaa", count: Number } }
+// Compat : si valeur = "jj/mm/aaaa" (ancien format), on la lit encore.
+
+function getBilledTodayMap(){
+  try { return JSON.parse(localStorage.getItem("billedToday") || "{}"); }
+  catch(e){ return {}; }
 }
+
+function setBilledToday(k, dateStr, count){
+  const m = getBilledTodayMap();
+  m[k] = { date: dateStr, count: typeof count === "number" ? count : 0 };
+  localStorage.setItem("billedToday", JSON.stringify(m));
+}
+
+function isBilledToday(k){
+  const v = getBilledTodayMap()[k];
+  const t = todayStr();
+  if (v && typeof v === "object") return v.date === t;
+  return v === t; // compat ancien format
+}
+
+function cleanupBilledToday(){
+  const m = getBilledTodayMap();
+  const t = todayStr();
+  let changed = false;
+  for (const k in m){
+    const v = m[k];
+    const vDate = (v && typeof v === "object") ? v.date : v;
+    if (vDate !== t){ delete m[k]; changed = true; }
+  }
+  if (changed) localStorage.setItem("billedToday", JSON.stringify(m));
+}
+
+// Total des séances facturées aujourd'hui (tous patients)
+function getBilledTodayTotalCount(){
+  const m = getBilledTodayMap();
+  const t = todayStr();
+  let total = 0;
+  for (const k in m){
+    const v = m[k];
+    if (v && typeof v === "object"){
+      if (v.date === t) total += v.count || 0;
+    } else if (v === t){
+      // ancien format sans "count" -> 0 par défaut
+      total += 0;
+    }
+  }
+  return total;
+}
+
 
 // --- Info-bulle de 2s sur un <li> ---
 // Info-bulle de N ms (par défaut 2000ms)
@@ -822,20 +867,26 @@ function renderPatients(filter = "") {
       const icon = billedNow ? "💰" : "💸";
       const title = billedNow ? "Facturé aujourd'hui" : "Facturer jusqu'à aujourd'hui";
       const billEmoji = makeEmoji(icon, title, billedNow ? null : ()=>{
-        const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
-        if(!ok) return;
+const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
+if(!ok) return;
 
-        const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-        const q = patients[i];
-        if (!q) return;
-        q.lastFactureDate = todayStr();
-        patients[i] = q;
-        localStorage.setItem("patients", JSON.stringify(patients));
+const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+const q = patients[i];
+if (!q) return;
 
-        setBilledToday(k, todayStr());  // 💰 jusqu'à minuit
-        renderPatients(searchInput.value);
-        updatePinButton();
-        updateMainTotals();
+// nb de séances qu’on facture maintenant (avant de bouger lastFactureDate)
+const countToBill = nonFactCount(q);
+
+q.lastFactureDate = todayStr();
+patients[i] = q;
+localStorage.setItem("patients", JSON.stringify(patients));
+
+// mémorise pour le total du jour (💰)
+setBilledToday(k, todayStr(), countToBill);
+
+renderPatients(searchInput.value);
+updatePinButton();
+updateMainTotals();
       });
       right.appendChild(billEmoji);
     }
@@ -884,13 +935,18 @@ function deletePatient(index) {
   if(!p) return;
   const ok = confirm(`Supprimer définitivement ${p.nom} ${p.prenom} ?`);
   if(!ok) return;
+
+  // Nettoie la liste spéciale
+  const k = keyName(p.nom, p.prenom);
+  const keys = getSpecialKeys().filter(x => x !== k);
+  setSpecialKeys(keys);
+
   patients.splice(index, 1);
   localStorage.setItem("patients", JSON.stringify(patients));
   renderPatients(searchInput.value);
   updatePinButton();
   updateMainTotals();
 }
-
 
     // --- Navigation ---
     function showAddScreen() {
@@ -978,19 +1034,30 @@ if(!cbRen.__bound){
       
 }
 
-    function showPresenceSelection() {
-      patientMenu.style.display = "none";
-      hideAll();
-      document.getElementById("presence-screen").style.display = "block";
+  function showPresenceSelection() {
+  patientMenu.style.display = "none";
+  hideAll();
+  document.getElementById("presence-screen").style.display = "block";
 
-      const today = new Date();
-      presenceYear = today.getFullYear();
-      presenceMonth = today.getMonth();
-      presenceSelection = new Set(
-        (JSON.parse(localStorage.getItem("patients"))[selectedPatientIndex].presences || [])
-      );
-      renderPresenceCalendar();
-    }
+  const today = new Date();
+  presenceYear = today.getFullYear();
+  presenceMonth = today.getMonth();
+
+  const arr = JSON.parse(localStorage.getItem("patients") || "[]");
+  const pres = arr[selectedPatientIndex]?.presences || [];
+  presenceSelection = new Set(pres);
+
+  renderPresenceCalendar();
+}
+
+function savePresenceSelection() {
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  if (selectedPatientIndex == null || !patients[selectedPatientIndex]) return;
+  patients[selectedPatientIndex].presences = Array.from(presenceSelection);
+  localStorage.setItem("patients", JSON.stringify(patients));
+  showMainScreen();
+}
+      
     function showPresenceByDate() {
       patientMenu.style.display = "none";
       hideAll();
@@ -1028,6 +1095,17 @@ if(!cbRen.__bound){
        "facturation-date-screen","facture-screen","ocr-import-screen","special-screen","patient-sessions-screen"]
        .forEach(id => { document.getElementById(id).style.display="none"; });
     }
+
+function backFromPatientSessions(){
+  if (sessionsBackTarget === "facture"){
+    hideAll();
+    document.getElementById("facture-screen").style.display = "block";
+    renderFactureList();
+  } else {
+    showMainScreen();
+  }
+}
+      
           // --- Menu patient ---
     function showPatientMenu(index) {
       selectedPatientIndex = index;
@@ -1035,8 +1113,10 @@ if(!cbRen.__bound){
     }
 function closeMenuAndShowFactureList(mode) {
   patientMenu.style.display = "none";
-  showFactureList(mode); // ta fonction qui ouvre l'écran des séances
+  sessionsBackTarget = "main";   // <— retour = accueil pour ce chemin
+  showFactureList(mode);
 }
+
       patientMenu.addEventListener("click", (e) => {
       if (e.target === patientMenu) {
         patientMenu.style.display = "none";
@@ -1483,13 +1563,15 @@ function renderFactureList() {
 
     // 👁️‍🗨️ à gauche : ouvre la liste des non facturées de ce patient
     const eye = makeEmoji("👁️‍🗨️", "Voir détails non facturés", ()=>{
-      const key = keyName(p.nom, p.prenom);
-      const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
-      if (idx !== -1) {
-        selectedPatientIndex = idx;
-        showFactureList(false); // écran des séances non facturées (chronologique + bouton retour)
-      }
-    });
+  sessionsBackTarget = "facture";  // <— AJOUT : on marque la provenance
+  const key = keyName(p.nom, p.prenom);
+  const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
+  if (idx !== -1) {
+    selectedPatientIndex = idx;
+    showFactureList(false); // liste non facturées du patient
+  }
+});
+
     li.appendChild(eye);
 
     const nameSpan = document.createElement("span");
@@ -1522,22 +1604,24 @@ function renderFactureList() {
     right.className = "right-edge";
 
     const billEmoji = makeEmoji("💸", "Facturer jusqu'à aujourd'hui", ()=>{
-      const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
-      if(!ok) return;
+const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
+if(!ok) return;
 
-      const key = keyName(p.nom, p.prenom);
-      const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
-      if (idx !== -1) {
-        patients[idx].lastFactureDate = formatDate(new Date());
-        localStorage.setItem("patients", JSON.stringify(patients));
+const key = keyName(p.nom, p.prenom);
+const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
+if (idx !== -1) {
+  patients[idx].lastFactureDate = formatDate(new Date());
+  localStorage.setItem("patients", JSON.stringify(patients));
 
-        setBilledToday(key, todayStr());
-      }
+  // p.nonFact = nb de séances facturées maintenant
+  setBilledToday(key, todayStr(), p.nonFact);
+}
 
-      renderFactureList();
-      renderPatients(searchInput.value);
-      updatePinButton();
-      updateMainTotals();
+renderFactureList();
+renderPatients(searchInput.value);
+updatePinButton();
+updateMainTotals();
+
     });
 
     right.appendChild(billEmoji);
@@ -1570,61 +1654,59 @@ function showFactureList(filterMode) {
   const titleEl = document.getElementById("patient-sessions-title");
   ul.innerHTML = "";
 
-  const todayStr = formatDate(new Date());
+  // Défensif : liste des séances
+  const sessions = Array.isArray(p.presences) ? p.presences.slice() : [];
+
+  // Éviter d'ombrer la fonction todayStr()
+  const todayStrVal = formatDate(new Date());
   const last = p.lastFactureDate ? normalizeDate(p.lastFactureDate) : null;
 
-  // Toutes les présences triées chronologiquement ASC
-  const sessions = (p.presences || []).slice().sort((a,b) => {
-    const [ja,ma,aa]=a.split("/").map(Number);
-    const [jb,mb,ab]=b.split("/").map(Number);
-    return new Date(aa,ma-1,ja) - new Date(ab,mb-1,jb);
+  // Tri chronologique ASC
+  sessions.sort((a, b) => {
+    const [ja, ma, aa] = a.split("/").map(Number);
+    const [jb, mb, ab] = b.split("/").map(Number);
+    return new Date(aa, ma - 1, ja) - new Date(ab, mb - 1, jb);
   });
 
-  // Helper non facturées (en ignorant FUTUR)
-  const nonFactCount = sessions.reduce((cnt, d) => {
-    const isPastOrToday = compareDates(d, todayStr) <= 0;
+  // Nb de non-facturées (<= aujourd’hui)
+  const nonFactCountLocal = sessions.reduce((cnt, d) => {
+    const isPastOrToday = compareDates(d, todayStrVal) <= 0;
     const isNonFact = !last || compareDates(d, last) > 0;
     return cnt + (isPastOrToday && isNonFact ? 1 : 0);
   }, 0);
 
-  // Titre selon mode, avec (total non facturées) entre parenthèses
+  // Titre
   const base =
-    filterMode === true ? "Séances facturées"
-    : filterMode === false ? "Séances non facturées"
-    : "Toutes les séances";
-  titleEl.textContent = `${p.nom} ${p.prenom} — ${base} (${nonFactCount})`;
+    filterMode === true   ? "Séances facturées" :
+    filterMode === false  ? "Séances non facturées" :
+                            "Toutes les séances";
+  titleEl.textContent = `${p.nom} ${p.prenom} — ${base} (${nonFactCountLocal})`;
 
-  // Filtrage selon mode
+  // Filtrage selon le mode
   const filtered = sessions.filter(d => {
-    if (filterMode === true) {        // facturées
-      return last && compareDates(d, last) <= 0;
+    if (filterMode === true) {          // facturées
+      return !!last && compareDates(d, last) <= 0;
     }
-    if (filterMode === false) {       // non facturées (<= aujourd'hui)
-      const isPastOrToday = compareDates(d, todayStr) <= 0;
+    if (filterMode === false) {         // non facturées (<= aujourd’hui)
+      const isPastOrToday = compareDates(d, todayStrVal) <= 0;
       const isNonFact = !last || compareDates(d, last) > 0;
       return isPastOrToday && isNonFact;
     }
-    return true; // toutes
+    return true;                        // toutes
   });
 
-  // Rendu: futur = bleu ciel si on est en "toutes"
+  // Rendu
   filtered.forEach(d => {
     const li = document.createElement("li");
     li.textContent = d;
 
-    if (filterMode === undefined && compareDates(d, todayStr) > 0) {
-      li.style.color = "skyblue"; // futur distinct en "toutes"
-    } else {
-      // Colorer facturation (optionnel, neutre sinon)
-      const isNonFact = !last || compareDates(d, last) > 0;
-      // Tu peux colorer si tu veux, ici on laisse blanc pour facturées/non
-      // li.style.color = isNonFact ? "#ffd27f" : "#fff";
+    // En mode "toutes", distinguer le futur
+    if (filterMode === undefined && compareDates(d, todayStrVal) > 0) {
+      li.style.color = "skyblue";
     }
-
     ul.appendChild(li);
   });
 }
-
 
     // --- OCR Doctolib ---
     async function processOcrFiles() {
@@ -2341,12 +2423,13 @@ function updateMainTotals(){
   if(!left || !right) return;
 
   const alerts = globalAlertCount();
-  const sessions = globalNonFactCount();
-  const euros = Math.round(sessions * 18.2);
+  const sessionsBilledToday = getBilledTodayTotalCount();   // <— nouveau
+  const euros = Math.round(sessionsBilledToday * 18.2);
 
   left.textContent  = `Total ⚠️❓📑 : ${alerts}`;
-  right.textContent = `Total💰 : ≈ ${euros.toLocaleString('fr-FR')} €`;
+  right.textContent = `Total💰 : ${euros.toLocaleString('fr-FR')} €`;
 }
+
 
  let __mergeChosenKey = null; // keyName du patient coché
 
