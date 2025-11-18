@@ -473,7 +473,21 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
 </div>
 
     <ul class="patient-list" id="patientList"></ul>
+
+    <!-- Zone sauvegarde / restauration -->
+    <div style="margin-top:1rem; font-size:0.8rem; display:flex; flex-wrap:wrap; gap:.5rem;">
+      <button onclick="exportAllData()">💾 Exporter toutes les données</button>
+
+      <label style="background:#1f3f7a; padding:.5rem 1rem; border-radius:6px; cursor:pointer;">
+        📂 Importer une sauvegarde
+        <input type="file"
+               accept="application/json"
+               style="display:none;"
+               onchange="if(this.files[0]) importAllDataFromFile(this.files[0]);">
+      </label>
+    </div>
   </div>
+
 
   <!-- Écran ajout patient -->
 <div id="add-screen" class="container">
@@ -658,7 +672,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     <button onclick="closeMenuAndShowFactureList(false)">Liste séances non facturées</button>
     <button onclick="closeMenuAndShowFactureList()">Liste de toutes les séances</button>
     <button onclick="showLastFactureScreen()">Date de la dernière facturation</button>
-    <button onclick="addToSpecialList()">Ajouter à la liste spéciale</button>
+<button id="special-toggle-btn">Ajouter à la liste spéciale</button>
     <button onclick="renfoDuSoir()">Renfo du soir</button>
     <button onclick="ordonnanceOK()">Ordonnance OK</button>
     <button onclick="showMergeModal()">Fusionner avec . . .</button>
@@ -679,6 +693,8 @@ let presenceSelection = new Set();
 let currentDayView = null;
 let sessionsBackTarget = "main"; // "main" ou "facture"
 let bilanAddMode = false;        // mode spécial : choisir la date d'un bilan
+let menuFromSpecial = false;     // true si le menu vient de la liste spéciale
+
 
     // --- Utilitaires syntaxe des noms ---
 function normName(s){return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z'’ -]/g,"").replace(/\s+/g," ").trim();}
@@ -982,7 +998,11 @@ updateMainTotals();
     li.appendChild(right);
 
     // clic ligne → menu patient
-    li.onclick = () => showPatientMenu(i);
+li.onclick = () => {
+  menuFromSpecial = false;
+  showPatientMenu(i);
+};
+
     patientListEl.appendChild(li);
   });
 
@@ -1196,10 +1216,29 @@ function backFromPatientSessions(){
 }
       
           // --- Menu patient ---
-    function showPatientMenu(index) {
-      selectedPatientIndex = index;
-      patientMenu.style.display = "flex";
+function showPatientMenu(index) {
+  selectedPatientIndex = index;
+
+  const btn = document.getElementById("special-toggle-btn");
+  if (btn) {
+    if (menuFromSpecial) {
+      // Mode "liste spéciale" : bouton = supprimer de la liste spéciale
+      btn.textContent = "Supprimer de la liste spéciale";
+      btn.onclick = function () {
+        removeFromSpecialList();
+      };
+    } else {
+      // Mode liste principale (ou autre) : ajouter à la liste spéciale
+      btn.textContent = "Ajouter à la liste spéciale";
+      btn.onclick = function () {
+        addToSpecialList();
+      };
     }
+  }
+
+  patientMenu.style.display = "flex";
+}
+
 function closeMenuAndShowFactureList(mode) {
   patientMenu.style.display = "none";
   sessionsBackTarget = "main";   // <— retour = accueil pour ce chemin
@@ -2330,6 +2369,38 @@ function addToSpecialList() {
   patientMenu.style.display = "none";
 }
 
+function removeFromSpecialList() {
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  if (!p) return;
+
+  const k = keyName(p.nom, p.prenom);
+  const keys = getSpecialKeys();
+
+  if (!keys.includes(k)) {
+    // déjà pas dans la liste spéciale, on ferme juste le menu
+    patientMenu.style.display = "none";
+    return;
+  }
+
+  const ok = confirm(`Supprimer ${p.nom} ${p.prenom} de la liste spéciale ?`);
+  if (!ok) return;
+
+  const newKeys = keys.filter(x => x !== k);
+  setSpecialKeys(newKeys);
+
+  patientMenu.style.display = "none";
+
+  // Si on est sur l'écran de la liste spéciale, on la rafraîchit
+  if (document.getElementById("special-screen").style.display === "block") {
+    renderSpecialList();
+  }
+
+  // Mise à jour de la pastille 📌
+  updatePinButton();
+}
+      
+
 function getMostRecentBilanDate(p){
   const arr = (p.bilans || []).slice();
   if (arr.length === 0) return null;
@@ -2442,8 +2513,12 @@ function renderSpecialList() {
     }
     if (p.ordRenouv) li.appendChild(makeEmoji("📑","Ordonnance à renouveler"));
 
-    li.onclick = () => showPatientMenu(i);
-    listEl.appendChild(li);
+li.onclick = () => {
+  menuFromSpecial = true;
+  showPatientMenu(i);
+};
+listEl.appendChild(li);
+
   });
 
   const total = rows.reduce((s, {p}) => s + nonFactCount(p), 0);
@@ -2861,6 +2936,60 @@ C.bilans = Array.from(setBil);
 }
 
 
+// ====== EXPORT / IMPORT GLOBAL DES DONNÉES ======
+
+function exportAllData(){
+  const data = {
+    patients: JSON.parse(localStorage.getItem("patients") || "[]"),
+    billingJournalV1: JSON.parse(localStorage.getItem("billingJournalV1") || "{}"),
+    billedToday: JSON.parse(localStorage.getItem("billedToday") || "{}"),
+    specialList: JSON.parse(localStorage.getItem("specialList") || "[]")
+  };
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "people-odyssey-backup.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importAllDataFromFile(file){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+
+      // On écrase les données locales avec celles du fichier
+      if (data.patients) {
+        localStorage.setItem("patients", JSON.stringify(data.patients));
+      }
+      if (data.billingJournalV1) {
+        localStorage.setItem("billingJournalV1", JSON.stringify(data.billingJournalV1));
+      }
+      if (data.billedToday) {
+        localStorage.setItem("billedToday", JSON.stringify(data.billedToday));
+      }
+      if (data.specialList) {
+        localStorage.setItem("specialList", JSON.stringify(data.specialList));
+      }
+
+      alert("Sauvegarde restaurée avec succès ✅");
+      // On reconstruit l'écran principal avec les nouvelles données
+      showMainScreen();
+    } catch(err){
+      console.error(err);
+      alert("Erreur lors de la lecture du fichier de sauvegarde.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+      
    // --- Init ---
 showToday();
 cleanupBilledToday();
