@@ -653,6 +653,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     <button onclick="addPresenceOffset(0)">Présent ce jour</button>
     <button onclick="addPresenceOffset(1)">Présent demain</button>
     <button onclick="showPresenceSelection()">Sélectionner les présences</button>
+    <button onclick="addBilanMenu()">Ajouter Bilan</button>
     <button onclick="closeMenuAndShowFactureList(true)">Liste séances facturées</button>
     <button onclick="closeMenuAndShowFactureList(false)">Liste séances non facturées</button>
     <button onclick="closeMenuAndShowFactureList()">Liste de toutes les séances</button>
@@ -671,12 +672,13 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     const todayDateEl = document.getElementById("todayDate");
     const dayPatientList = document.getElementById("day-patient-list");
 
-    let currentYear, currentMonth;
-    let presenceYear, presenceMonth;
-    let selectedPatientIndex = null;
-    let presenceSelection = new Set();
-    let currentDayView = null;
-    let sessionsBackTarget = "main"; // "main" ou "facture"
+let currentYear, currentMonth;
+let presenceYear, presenceMonth;
+let selectedPatientIndex = null;
+let presenceSelection = new Set();
+let currentDayView = null;
+let sessionsBackTarget = "main"; // "main" ou "facture"
+let bilanAddMode = false;        // mode spécial : choisir la date d'un bilan
 
     // --- Utilitaires syntaxe des noms ---
 function normName(s){return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z'’ -]/g,"").replace(/\s+/g," ").trim();}
@@ -824,15 +826,23 @@ function showTip(li, text, ms = 2000){
       todayDateEl.textContent = today.toLocaleDateString("fr-FR", options);
     }
 
-    // Compter les présences pour une date
-    function countPresences(dateStr) {
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      let count = 0;
-      patients.forEach(p => {
-        if (p.presences && p.presences.includes(dateStr)) count++;
-      });
-      return count;
-    }
+// Compter le nombre total de séances (présences + bilans) pour une date
+function countPresences(dateStr) {
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  let count = 0;
+
+  patients.forEach(p => {
+    // une séance classique ce jour
+    if (p.presences && p.presences.includes(dateStr)) count++;
+
+    // + 1 par bilan ce jour
+    const nbBilans = (p.bilans || []).filter(d => d === dateStr).length;
+    count += nbBilans;
+  });
+
+  return count;
+}
+
          
    // ====== Tri des patients (écran principal) ======
 // Modes: "AZ" (par défaut), "ADDED_OLD", "ZA", "ADDED_NEW"
@@ -997,7 +1007,8 @@ patients.push({
   // Nouveaux champs :
   ordNonScan:false,
   ordRenouv:false,
-  ordDetails:""
+  ordDetails:"",
+  bilans:[]
 });
 
       localStorage.setItem("patients", JSON.stringify(patients));
@@ -1336,6 +1347,59 @@ function addPresenceOffset(offset) {
   updateMainTotals();
 }
 
+  function addBilanForDate(dateStr){
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  if (!p) return;
+
+  if (!Array.isArray(p.bilans)) p.bilans = [];
+  p.bilans.push(dateStr);   // on autorise plusieurs bilans le même jour
+
+  patients[selectedPatientIndex] = p;
+  localStorage.setItem("patients", JSON.stringify(patients));
+
+  renderPatients(searchInput.value);
+  updatePinButton();
+  updateMainTotals();
+  safeRefreshCalendar();
+}
+
+ function addBilanMenu(){
+  if (selectedPatientIndex == null) return;
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  if (!p) return;
+
+  // S'il a déjà au moins un bilan, demander confirmation AVANT
+  if (p.bilans && p.bilans.length > 0){
+    const lastBilan = getMostRecentBilanDate(p);
+    const ok = confirm(
+      `Ce patient a déjà un bilan le ${lastBilan}.\n\n` +
+      `Souhaites-tu vraiment ajouter un nouveau bilan ?`
+    );
+    if (!ok) {
+      patientMenu.style.display = "none";
+      return;
+    }
+  }
+
+  // Ensuite : choix aujourd'hui ou via le calendrier des présences
+  const okToday = confirm(
+    "Souhaites-tu ajouter le bilan à la date d’aujourd’hui ?\n\n" +
+    "OK = Bilan aujourd’hui\nAnnuler = Choisir une date dans le calendrier des présences"
+  );
+
+  if (okToday){
+    addBilanForDate(todayStr());
+    patientMenu.style.display = "none";
+  } else {
+    bilanAddMode = true;
+    patientMenu.style.display = "none";
+    showPresenceSelection();
+  }
+}
+     
 
     // --- Ajout présence par date ---
     function savePresenceByDate() {
@@ -1431,46 +1495,61 @@ function renderCalendar() {
     }
 
     // --- Calendrier présences (multi sélection) ---
-    function renderPresenceCalendar() {
-      const titleEl = document.getElementById("presence-title");
-      const gridEl = document.getElementById("presence-grid");
+function renderPresenceCalendar() {
+  const titleEl = document.getElementById("presence-title");
+  const gridEl = document.getElementById("presence-grid");
 
-      const firstDay = new Date(presenceYear, presenceMonth, 1);
-      const lastDay = new Date(presenceYear, presenceMonth + 1, 0);
-      const monthName = firstDay.toLocaleString("fr-FR", { month: "long" });
+  const firstDay = new Date(presenceYear, presenceMonth, 1);
+  const lastDay = new Date(presenceYear, presenceMonth + 1, 0);
+  const monthName = firstDay.toLocaleString("fr-FR", { month: "long" });
 
-      titleEl.textContent = monthName + " " + presenceYear;
-      gridEl.innerHTML = "";
+  if (bilanAddMode){
+    titleEl.textContent = "Choisir la date du bilan — " + monthName + " " + presenceYear;
+  } else {
+    titleEl.textContent = monthName + " " + presenceYear;
+  }
 
-      const startDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
-      for (let i = 0; i < startDay; i++) {
-        gridEl.appendChild(document.createElement("div"));
-      }
+  gridEl.innerHTML = "";
 
-      for (let d = 1; d <= lastDay.getDate(); d++) {
-        const date = new Date(presenceYear, presenceMonth, d);
-        const dateStr = formatDate(date);
-        const dayEl = document.createElement("div");
-        dayEl.className = "calendar-day";
-        dayEl.textContent = d;
+  const startDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+  for (let i = 0; i < startDay; i++) {
+    gridEl.appendChild(document.createElement("div"));
+  }
 
-        if (presenceSelection.has(dateStr)) {
-          dayEl.classList.add("selected");
-        }
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    const date = new Date(presenceYear, presenceMonth, d);
+    const dateStr = formatDate(date);
+    const dayEl = document.createElement("div");
+    dayEl.className = "calendar-day";
+    dayEl.textContent = d;
 
-        dayEl.onclick = () => {
-          if (presenceSelection.has(dateStr)) {
-            presenceSelection.delete(dateStr);
-            dayEl.classList.remove("selected");
-          } else {
-            presenceSelection.add(dateStr);
-            dayEl.classList.add("selected");
-          }
-        };
-
-        gridEl.appendChild(dayEl);
-      }
+    if (!bilanAddMode && presenceSelection.has(dateStr)) {
+      dayEl.classList.add("selected");
     }
+
+    dayEl.onclick = () => {
+      if (bilanAddMode){
+        // clic = choisir la date du bilan
+        addBilanForDate(dateStr);
+        bilanAddMode = false;
+        showMainScreen();
+        return;
+      }
+
+      // mode normal : toggle présence
+      if (presenceSelection.has(dateStr)) {
+        presenceSelection.delete(dateStr);
+        dayEl.classList.remove("selected");
+      } else {
+        presenceSelection.add(dateStr);
+        dayEl.classList.add("selected");
+      }
+    };
+
+    gridEl.appendChild(dayEl);
+  }
+}
+
     function prevPresenceMonth(){
       presenceMonth--;
       if (presenceMonth < 0) { presenceMonth = 11; presenceYear--; }
@@ -1514,54 +1593,102 @@ function sortPatientsByMode(rows, mode) {
 }
 
       
-  function renderDayPatients(dateStr) {
+ function renderDayPatients(dateStr) {
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const q = (document.getElementById("daySearchInput")?.value || "").toLowerCase();
 
-  // Construire rows {p, i} pour ceux présents ce jour
-  let rows = patients
-    .map((p, i) => ({ p, i }))
-    .filter(({p}) => p.presences && p.presences.includes(dateStr))
-    .filter(({p}) => (p.nom + " " + p.prenom).toLowerCase().includes(q));
+  const rows = [];
 
-  // Tri selon daySortMode (déjà défini dans ton code)
-  rows = sortPatientsByMode(rows, daySortMode);
+  patients.forEach((p, i) => {
+    const fullName = (p.nom + " " + p.prenom).toLowerCase();
+    if (q && !fullName.includes(q)) return;
+
+    // séance classique ce jour
+    if (p.presences && p.presences.includes(dateStr)) {
+      rows.push({ p, i, type: "presence" });
+    }
+
+    // bilan(s) ce jour
+    const nbBilans = (p.bilans || []).filter(d => d === dateStr).length;
+    for (let k = 0; k < nbBilans; k++) {
+      rows.push({ p, i, type: "bilan" });
+    }
+  });
+
+  // tri simple par nom/prénom
+  rows.sort((a, b) =>
+    (a.p.nom + " " + a.p.prenom).localeCompare(
+      b.p.nom + " " + b.p.prenom,
+      "fr",
+      { sensitivity: "base" }
+    )
+  );
 
   dayPatientList.innerHTML = "";
-  rows.forEach(({p, i}) => {
+
+  rows.forEach(({p, i, type}) => {
     const li = document.createElement("li");
 
-    // Corbeille (supprime la présence du jour) + confirmation
     const delBtn = document.createElement("button");
     delBtn.textContent = "🗑️";
     delBtn.className = "delete-btn";
-    delBtn.onclick = (e) => {
-      e.stopPropagation();
-      const ok = confirm(`Retirer ${p.nom} ${p.prenom} des présents du ${dateStr} ?`);
-      if(!ok) return;
-      p.presences = (p.presences||[]).filter(d => d !== dateStr);
-      patients[i] = p;
-      localStorage.setItem("patients", JSON.stringify(patients));
-      renderDayPatients(dateStr);
-      updateDayTitle(dateStr);
-    };
 
     const span = document.createElement("span");
-    span.textContent = p.nom + " " + p.prenom;
+    span.textContent = (type === "bilan")
+      ? `${p.nom} ${p.prenom} (Bilan)`
+      : `${p.nom} ${p.prenom}`;
 
-    // Flèche ➡️ collée au bord droit : “reporter au lendemain”
     const right = document.createElement("span");
     right.className = "right-edge";
-    const move = makeEmoji("➡️", "Reporter au lendemain", ()=>{
-      const tomorrow = addDaysFR(dateStr, 1);
-      p.presences = (p.presences || []).filter(d => d !== dateStr);
-      if(!p.presences.includes(tomorrow)) p.presences.push(tomorrow);
-      patients[i] = p;
-      localStorage.setItem("patients", JSON.stringify(patients));
-      renderDayPatients(dateStr);
-      updateDayTitle(dateStr);
-    });
-    right.appendChild(move);
+
+    if (type === "presence") {
+      // supprimer la présence du jour
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        const ok = confirm(`Retirer ${p.nom} ${p.prenom} des présents du ${dateStr} ?`);
+        if(!ok) return;
+        p.presences = (p.presences||[]).filter(d => d !== dateStr);
+        patients[i] = p;
+        localStorage.setItem("patients", JSON.stringify(patients));
+        renderDayPatients(dateStr);
+        updateDayTitle(dateStr);
+        updateMainTotals();
+        safeRefreshCalendar();
+      };
+
+      // flèche ➡️ pour décaler au lendemain (seulement pour les séances)
+      const move = makeEmoji("➡️", "Reporter au lendemain", ()=>{
+        const tomorrow = addDaysFR(dateStr, 1);
+        p.presences = (p.presences || []).filter(d => d !== dateStr);
+        if(!p.presences.includes(tomorrow)) p.presences.push(tomorrow);
+        patients[i] = p;
+        localStorage.setItem("patients", JSON.stringify(patients));
+        renderDayPatients(dateStr);
+        updateDayTitle(dateStr);
+        updateMainTotals();
+        safeRefreshCalendar();
+      });
+      right.appendChild(move);
+
+    } else {
+      // type === "bilan" : suppression uniquement du bilan
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        const ok = confirm(`Supprimer le bilan de ${p.nom} ${p.prenom} du ${dateStr} ?`);
+        if (!ok) return;
+
+        const idx = (p.bilans || []).indexOf(dateStr);
+        if (idx !== -1) p.bilans.splice(idx, 1);
+
+        patients[i] = p;
+        localStorage.setItem("patients", JSON.stringify(patients));
+        renderDayPatients(dateStr);
+        updateDayTitle(dateStr);
+        updateMainTotals();
+        safeRefreshCalendar();
+      };
+      // pas de flèche ➡️ pour les bilans
+    }
 
     li.appendChild(delBtn);
     li.appendChild(span);
@@ -1569,7 +1696,6 @@ function sortPatientsByMode(rows, mode) {
     dayPatientList.appendChild(li);
   });
 
-  // écouteur de recherche (une seule fois)
   const inp = document.getElementById("daySearchInput");
   if (inp && !inp.__bound) {
     inp.addEventListener("input", () => renderDayPatients(dateStr));
@@ -1588,21 +1714,36 @@ function sortPatientsByMode(rows, mode) {
       showMainScreen();
     }
 
-    // Retourne % de séances non facturées pour une date
-    function facturePercentage(dateStr) {
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-      let total = 0, nonFact = 0;
-      patients.forEach(p => {
-        if (p.presences && p.presences.includes(dateStr)) {
-          total++;
-          if (!p.lastFactureDate || compareDates(dateStr, p.lastFactureDate) > 0) {
-            nonFact++;
-          }
-        }
-      });
-      if (total === 0) return null;
-      return (nonFact / total) * 100;
+// Retourne % de séances non facturées (présences + bilans) pour une date
+function facturePercentage(dateStr) {
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  let total = 0, nonFact = 0;
+
+  patients.forEach(p => {
+    const last = p.lastFactureDate ? normalizeDate(p.lastFactureDate) : null;
+
+    // séance classique ce jour
+    if (p.presences && p.presences.includes(dateStr)) {
+      total++;
+      if (!last || compareDates(dateStr, last) > 0) {
+        nonFact++;
+      }
     }
+
+    // bilan(s) ce jour
+    const nbBilans = (p.bilans || []).filter(d => d === dateStr).length;
+    for (let i = 0; i < nbBilans; i++){
+      total++;
+      if (!last || compareDates(dateStr, last) > 0) {
+        nonFact++;
+      }
+    }
+  });
+
+  if (total === 0) return null;
+  return (nonFact / total) * 100;
+}
+
 
     function compareDates(d1, d2) {
       const [j1,m1,a1] = d1.split("/").map(Number);
@@ -1624,17 +1765,11 @@ function renderFactureList() {
   const tStr = formatDate(new Date()); // today
 
   // Construire la liste avec nombre de non-facturées
-  const all = patients.map(p => {
-    let nonFact = 0;
-    (p.presences || []).forEach(dateStr => {
-      if (compareDates(dateStr, tStr) <= 0) {
-        if (!p.lastFactureDate || compareDates(dateStr, p.lastFactureDate) > 0) {
-          nonFact++;
-        }
-      }
-    });
-    return { ...p, nonFact };
-  }).filter(p => p.nonFact > 0);
+const all = patients.map(p => {
+  const nonFact = nonFactCount(p); // inclut présences + bilans
+  return { ...p, nonFact };
+}).filter(p => p.nonFact > 0);
+
 
   // Total global
   const totalGlobal = all.reduce((sum, p) => sum + p.nonFact, 0);
@@ -1734,7 +1869,7 @@ updateMainTotals();
 
 
 
-      // ====== Listes de séances d'un patient (facturées / non facturées / toutes) ======
+// ====== Listes de séances d'un patient (facturées / non facturées / toutes) ======
 // filterMode: true = facturées, false = non facturées (<= aujourd'hui), undefined = toutes (inclut futur en bleu ciel)
 function showFactureList(filterMode) {
   if (selectedPatientIndex === null) return;
@@ -1748,28 +1883,35 @@ function showFactureList(filterMode) {
   const titleEl = document.getElementById("patient-sessions-title");
   ul.innerHTML = "";
 
-  // Défensif : liste des séances
-  const sessions = Array.isArray(p.presences) ? p.presences.slice() : [];
-
-  // Éviter d'ombrer la fonction todayStr()
   const todayStrVal = formatDate(new Date());
   const last = p.lastFactureDate ? normalizeDate(p.lastFactureDate) : null;
 
-  // Tri chronologique ASC
+  // Construire la liste complète : présences + bilans
+  const sessions = [];
+
+  (p.presences || []).forEach(d => {
+    sessions.push({ date:d, type:"normal" });
+  });
+
+  (p.bilans || []).forEach(d => {
+    sessions.push({ date:d, type:"bilan" });
+  });
+
+  // Tri chronologique
   sessions.sort((a, b) => {
-    const [ja, ma, aa] = a.split("/").map(Number);
-    const [jb, mb, ab] = b.split("/").map(Number);
+    const [ja, ma, aa] = a.date.split("/").map(Number);
+    const [jb, mb, ab] = b.date.split("/").map(Number);
     return new Date(aa, ma - 1, ja) - new Date(ab, mb - 1, jb);
   });
 
-  // Nb de non-facturées (<= aujourd’hui)
-  const nonFactCountLocal = sessions.reduce((cnt, d) => {
+  // Nombre de non-facturées (<= aujourd'hui)
+  const nonFactCountLocal = sessions.reduce((cnt, s) => {
+    const d = s.date;
     const isPastOrToday = compareDates(d, todayStrVal) <= 0;
     const isNonFact = !last || compareDates(d, last) > 0;
     return cnt + (isPastOrToday && isNonFact ? 1 : 0);
   }, 0);
 
-  // Titre
   const base =
     filterMode === true   ? "Séances facturées" :
     filterMode === false  ? "Séances non facturées" :
@@ -1777,7 +1919,8 @@ function showFactureList(filterMode) {
   titleEl.textContent = `${p.nom} ${p.prenom} — ${base} (${nonFactCountLocal})`;
 
   // Filtrage selon le mode
-  const filtered = sessions.filter(d => {
+  const filtered = sessions.filter(s => {
+    const d = s.date;
     if (filterMode === true) {          // facturées
       return !!last && compareDates(d, last) <= 0;
     }
@@ -1789,18 +1932,20 @@ function showFactureList(filterMode) {
     return true;                        // toutes
   });
 
-  // Rendu
-  filtered.forEach(d => {
+  // Rendu avec la mention (Bilan)
+  filtered.forEach(s => {
     const li = document.createElement("li");
-    li.textContent = d;
+    let txt = s.date;
+    if (s.type === "bilan") txt += " (Bilan)";
+    li.textContent = txt;
 
-    // En mode "toutes", distinguer le futur
-    if (filterMode === undefined && compareDates(d, todayStrVal) > 0) {
+    if (filterMode === undefined && compareDates(s.date, todayStrVal) > 0) {
       li.style.color = "skyblue";
     }
     ul.appendChild(li);
   });
 }
+
 
     // --- OCR Doctolib ---
     async function processOcrFiles() {
@@ -2101,7 +2246,8 @@ function showOcrResults(lines) {
         rejet: "",
         notes: "",
         presences: [dateStr],
-        lastFactureDate: null
+        lastFactureDate: null,
+        bilans:[]
       });
     } else {
       // Ajoute la présence si elle n’existe pas
@@ -2184,17 +2330,38 @@ function addToSpecialList() {
   patientMenu.style.display = "none";
 }
 
-// Compte non facturées (en ignorant le futur)
+function getMostRecentBilanDate(p){
+  const arr = (p.bilans || []).slice();
+  if (arr.length === 0) return null;
+  // trie de la plus ancienne à la plus récente
+  arr.sort((a,b) => compareDates(a,b));
+  return arr[arr.length - 1];
+}
+
+      
+// Compte les séances non facturées (présences + bilans), en ignorant le futur
 function nonFactCount(p) {
   const todayStr = formatDate(new Date());
+  const last = p.lastFactureDate ? normalizeDate(p.lastFactureDate) : null;
   let c = 0;
+
+  // Séances classiques
   (p.presences || []).forEach(d => {
     if (compareDates(d, todayStr) <= 0) {
-      if (!p.lastFactureDate || compareDates(d, p.lastFactureDate) > 0) c++;
+      if (!last || compareDates(d, last) > 0) c++;
     }
   });
+
+  // Bilans
+  (p.bilans || []).forEach(d => {
+    if (compareDates(d, todayStr) <= 0) {
+      if (!last || compareDates(d, last) > 0) c++;
+    }
+  });
+
   return c;
 }
+
 
 // Met à jour la couleur + clignotement du bouton 📌
 function updatePinButton() {
@@ -2456,9 +2623,18 @@ function importAddOcrSelection() {
     // dédup strict par clé normalisée
     const k = keyName(nom, prenom);
     const exists = patients.some(p => keyName(p.nom, p.prenom) === k);
-    if (!exists) {
-      patients.push({ nom, prenom, phone:"", rejet:"", notes:"", presences:[], lastFactureDate:null });
-    }
+   if (!exists) {
+  patients.push({
+    nom,
+    prenom,
+    phone:"",
+    rejet:"",
+    notes:"",
+    presences:[],
+    lastFactureDate:null,
+    bilans:[]
+  });
+}
   });
 
   localStorage.setItem("patients", JSON.stringify(patients));
@@ -2635,9 +2811,14 @@ function doMergePatients(idxA, idxB, keep = "A"){
   if (keep === "A"){ C = A; D = B; cIdx = idxA; dIdx = idxB; }
   else             { C = B; D = A; cIdx = idxB; dIdx = idxA; }
 
-  // Fusion des présences (unique)
-  const set = new Set([...(C.presences||[]), ...(D.presences||[])]);
-  C.presences = Array.from(set);
+ // Fusion des présences (unique)
+const setPres = new Set([...(C.presences||[]), ...(D.presences||[])]);
+C.presences = Array.from(setPres);
+
+// AJOUT : fusion des bilans (unique)
+const setBil = new Set([...(C.bilans||[]), ...(D.bilans||[])]);
+C.bilans = Array.from(setBil);
+
 
   // lastFactureDate = plus récente
   if (D.lastFactureDate){
