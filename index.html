@@ -372,6 +372,31 @@
   50%  { box-shadow: 0 0 12px 3px rgba(255,255,255,.85); }
   100% { box-shadow: 0 0 0px 0 rgba(255,255,255,.6); }
 }.pin-blink { animation: glow 1.2s infinite; }
+    /* 💰 facturé aujourd'hui : lueur dorée clignotante */
+.emoji.money-today{
+  filter:
+    drop-shadow(0 0 4px rgba(255,215,0,.9))
+    drop-shadow(0 0 10px rgba(255,215,0,.8));
+  animation: moneyGlow 1.2s infinite;
+}
+
+@keyframes moneyGlow{
+  0%{
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px rgba(255,215,0,.7));
+  }
+  50%{
+    transform: scale(1.08);
+    filter:
+      drop-shadow(0 0 8px rgba(255,215,0,1))
+      drop-shadow(0 0 16px rgba(255,215,0,.9));
+  }
+  100%{
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px rgba(255,215,0,.7));
+  }
+}
+
 
 /* OCR Ajout — identique à Prévus */
 #add-ocr-results ul{
@@ -812,6 +837,21 @@ function cleanupBilledToday(){
   if (changed) localStorage.setItem("billedToday", JSON.stringify(m));
 }
 
+      // Affiche un 💰 statique les jours suivants si aucune séance n’a eu lieu depuis la dernière facturation
+function shouldShowStaticBilled(p){
+  const last = p.lastFactureDate ? normalizeDate(p.lastFactureDate) : null;
+  if (!last) return false;
+
+  const t = todayStr();
+
+  // si la dernière facturation est aujourd'hui ou dans le futur => pas de 💰 statique
+  if (compareDates(last, t) >= 0) return false;
+
+  // afficher 💰 statique tant qu’aucune séance (présence ou bilan) n’a été ajoutée après lastFactureDate
+  return nonFactCount(p) === 0;
+}
+
+      
       // --- Journal PERSISTANT des facturations par jour ---
 // Stockage: { "dd/mm/aaaa": nombre_de_seances_facturees_ce_jour, ... }
 function getBillingJournal(){
@@ -947,7 +987,7 @@ function sortPatients(arr) {
 }
 
       
-      // --- Gestion Patients ---
+// --- Gestion Patients ---
 function renderPatients(filter = "") {
   const all = JSON.parse(localStorage.getItem("patients") || "[]");
   patientListEl.innerHTML = "";
@@ -984,19 +1024,18 @@ function renderPatients(filter = "") {
     }
 
     // ⚠️ cliquable → bulle 3s avec le motif
-  const hasRejet = (p.rejetCount && p.rejetCount > 0) || (p.rejet && p.rejet.trim() !== "");
-if (hasRejet) {
-  const txt = p.rejet && p.rejet.trim()
-    ? p.rejet.trim()
-    : makeRejetText(p.rejetCount||0, p.rejetMutuelle, p.rejetSecu);
+    const hasRejet = (p.rejetCount && p.rejetCount > 0) || (p.rejet && p.rejet.trim() !== "");
+    if (hasRejet) {
+      const txt = p.rejet && p.rejet.trim()
+        ? p.rejet.trim()
+        : makeRejetText(p.rejetCount||0, p.rejetMutuelle, p.rejetSecu);
 
-  li.appendChild(makeEmoji("⚠️", "Rejet de paiement", () => {
-    showTip(li, `Rejet: ${txt}`, 3000);
-  }));
-}
+      li.appendChild(makeEmoji("⚠️", "Rejet de paiement", () => {
+        showTip(li, `Rejet: ${txt}`, 3000);
+      }));
+    }
 
-
-    // ❓ Ordonnance non scannée → bulle 2s (inchangé)
+    // ❓ Ordonnance non scannée → bulle 2s
     if (p.ordNonScan) {
       li.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e,self)=>{
         const info = (p.ordDetails||"").trim();
@@ -1020,45 +1059,59 @@ if (hasRejet) {
     // bord droit : 💸 / 💰 (facturation rapide)
     const right = document.createElement("span");
     right.className = "right-edge";
+
     const k = patientKey(p);
     const hasNonFact = nonFactCount(p) > 0;
-    if (hasNonFact || isBilledToday(k)) {
-      const billedNow = isBilledToday(k);
-      const icon = billedNow ? "💰" : "💸";
-      const title = billedNow ? "Facturé aujourd'hui" : "Facturer jusqu'à aujourd'hui";
-      const billEmoji = makeEmoji(icon, title, billedNow ? null : ()=>{
-const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
-if(!ok) return;
+    const billedNow = isBilledToday(k);
+    const showStaticMoney = shouldShowStaticBilled(p);
 
-const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-const q = patients[i];
-if (!q) return;
+    // Cas 1 : facturé aujourd'hui => 💰 avec lueur dorée clignotante
+    if (billedNow) {
+      const money = makeEmoji("💰", "Facturé aujourd'hui");
+      money.classList.add("money-today"); // <-- lueur + blink
+      right.appendChild(money);
 
-// nb de séances qu’on facture maintenant (avant de bouger lastFactureDate)
-const countToBill = nonFactCount(q);
+    // Cas 2 : séances non facturées => 💸 cliquable
+    } else if (hasNonFact) {
+      const billEmoji = makeEmoji("💸", "Facturer jusqu'à aujourd'hui", ()=>{
+        const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
+        if(!ok) return;
 
-q.lastFactureDate = todayStr();
-patients[i] = q;
-localStorage.setItem("patients", JSON.stringify(patients));
+        const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+        const q = patients[i];
+        if (!q) return;
 
-// mémorise pour le total du jour (💰)
-setBilledToday(k, todayStr(), countToBill);
-addBillingToJournal(todayStr(), countToBill);
-renderPatients(searchInput.value);
-updatePinButton();
-updateMainTotals();
+        // nb de séances qu’on facture maintenant
+        const countToBill = nonFactCount(q);
+
+        q.lastFactureDate = todayStr();
+        patients[i] = q;
+        localStorage.setItem("patients", JSON.stringify(patients));
+
+        // mémorise pour le total du jour (💰)
+        setBilledToday(k, todayStr(), countToBill);
+        addBillingToJournal(todayStr(), countToBill);
+
+        renderPatients(searchInput.value);
+        updatePinButton();
+        updateMainTotals();
         safeRefreshCalendar();
       });
       right.appendChild(billEmoji);
+
+    // Cas 3 : facturé les jours précédents et aucune séance depuis => 💰 statique
+    } else if (showStaticMoney) {
+      const moneyStatic = makeEmoji("💰", "Dernière facturation effectuée (aucune séance depuis)");
+      right.appendChild(moneyStatic);
     }
 
     li.appendChild(right);
 
     // clic ligne → menu patient
-li.onclick = () => {
-  menuFromSpecial = false;
-  showPatientMenu(i);
-};
+    li.onclick = () => {
+      menuFromSpecial = false;
+      showPatientMenu(i);
+    };
 
     patientListEl.appendChild(li);
   });
@@ -1066,7 +1119,6 @@ li.onclick = () => {
   // Met à jour la ligne des totaux
   updateMainTotals();
 }
-
 
    function savePatient() {
   const nom = document.getElementById("nom").value.trim();
