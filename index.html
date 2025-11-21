@@ -674,6 +674,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     <button onclick="showLastFactureScreen()">Date de la dernière facturation</button>
 <button id="special-toggle-btn">Ajouter à la liste spéciale</button>
     <button onclick="renfoDuSoir()">Renfo du soir</button>
+    <button onclick="showRejetModal()">Rejet ⚠️</button>
     <button onclick="ordonnanceOK()">Ordonnance OK</button>
     <button onclick="showMergeModal()">Fusionner avec . . .</button>
   </div>
@@ -1024,12 +1025,19 @@ patients.push({
   phone:"", rejet:"", notes:"",
   presences:[],
   lastFactureDate:null,
-  // Nouveaux champs :
+
+  // Ordonnances
   ordNonScan:false,
   ordRenouv:false,
   ordDetails:"",
-  bilans:[]
+  bilans:[],
+
+  // ✅ NOUVEAU : rejet structuré
+  rejetCount: 0,          // nombre de séances rejetées
+  rejetMutuelle: false,   // part mutuelle rejetée ?
+  rejetSecu: false        // part sécu rejetée ?
 });
+
 
       localStorage.setItem("patients", JSON.stringify(patients));
       document.getElementById("nom").value = "";
@@ -2286,7 +2294,10 @@ function showOcrResults(lines) {
         notes: "",
         presences: [dateStr],
         lastFactureDate: null,
-        bilans:[]
+        bilans:[],
+          rejetCount: 0,
+  rejetMutuelle: false,
+  rejetSecu: false
       });
     } else {
       // Ajoute la présence si elle n’existe pas
@@ -2707,7 +2718,10 @@ function importAddOcrSelection() {
     notes:"",
     presences:[],
     lastFactureDate:null,
-    bilans:[]
+    bilans:[],
+      rejetCount: 0,
+  rejetMutuelle: false,
+  rejetSecu: false
   });
 }
   });
@@ -2914,6 +2928,23 @@ C.bilans = Array.from(setBil);
   C.ordNonScan = !!(C.ordNonScan || D.ordNonScan);
   C.ordRenouv  = !!(C.ordRenouv  || D.ordRenouv );
   if ((!C.ordDetails || !C.ordDetails.trim()) && D.ordDetails) C.ordDetails = D.ordDetails;
+
+    // ✅ NOUVEAU : fusion rejets
+  const cN = C.rejetCount || 0;
+  const dN = D.rejetCount || 0;
+
+  // on additionne les séances rejetées
+  C.rejetCount = cN + dN;
+
+  // si l’un a la mutuelle ou la sécu rejetée, on garde vrai
+  C.rejetMutuelle = !!(C.rejetMutuelle || D.rejetMutuelle);
+  C.rejetSecu     = !!(C.rejetSecu     || D.rejetSecu);
+
+  // met à jour le texte old-school "rejet"
+  if (C.rejetCount > 0) {
+    C.rejet = makeRejetText(C.rejetCount, C.rejetMutuelle, C.rejetSecu);
+  }
+
 
   // Éventuellement, si keep == "B", on copie le nom/prénom de B sur C (déjà fait car C=B dans ce cas)
   // Supprimer D
