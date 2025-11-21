@@ -462,7 +462,27 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
   display:flex; 
   align-items:center; 
 }
- 
+
+    /* Patients uniquement en rejet (0 non facturé) */
+#facture-list li.zero-nonfact{
+  color: deeppink !important;
+}
+
+#rejet-period-modal{
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+#rejet-period-modal .menu-box{
+  background:#112b55;
+  border-radius:8px;
+  padding:1rem;
+  width:90%;
+  max-width:420px;
+}
    
    
 </style>
@@ -1048,39 +1068,41 @@ li.onclick = () => {
 }
 
 
-    function savePatient() {
-      const nom = document.getElementById("nom").value.trim();
-      const prenom = document.getElementById("prenom").value.trim();
-      if (!nom || !prenom) {
-        alert("Veuillez remplir Nom et Prénom");
-        return;
-      }
-      const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-patients.push({
-  nom, prenom,
-  phone:"", rejet:"", notes:"",
-  presences:[],
-  lastFactureDate:null,
+   function savePatient() {
+  const nom = document.getElementById("nom").value.trim();
+  const prenom = document.getElementById("prenom").value.trim();
+  if (!nom || !prenom) {
+    alert("Veuillez remplir Nom et Prénom");
+    return;
+  }
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  patients.push({
+    nom, prenom,
+    phone:"", rejet:"", notes:"",
+    presences:[],
+    lastFactureDate:null,
 
-  // Ordonnances
-  ordNonScan:false,
-  ordRenouv:false,
-  ordDetails:"",
-  bilans:[],
+    // Ordonnances
+    ordNonScan:false,
+    ordRenouv:false,
+    ordDetails:"",
+    bilans:[],
 
-  // ✅ NOUVEAU : rejet structuré
-  rejetCount: 0,          // nombre de séances rejetées
-  rejetMutuelle: false,   // part mutuelle rejetée ?
-  rejetSecu: false        // part sécu rejetée ?
-});
+    // Rejet structuré
+    rejetCount: 0,
+    rejetMutuelle: false,
+    rejetSecu: false,
 
+    // ✅ période du rejet (YYYY-MM)
+    rejetPeriod: ""
+  });
 
-      localStorage.setItem("patients", JSON.stringify(patients));
-      document.getElementById("nom").value = "";
-      document.getElementById("prenom").value = "";
-      showMainScreen();
-      renderPatients(searchInput.value);
-    }
+  localStorage.setItem("patients", JSON.stringify(patients));
+  document.getElementById("nom").value = "";
+  document.getElementById("prenom").value = "";
+  showMainScreen();
+  renderPatients(searchInput.value);
+}
 
 function deletePatient(index) {
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
@@ -1336,6 +1358,9 @@ function ordonnanceOK(){
 // REJET DE PAIEMENT (⚠️)
 // =========================
 
+let __pendingRejetData = null;
+
+
 // Construit le texte affiché dans info-screen et dans les bulles
 function makeRejetText(n, mut, sec){
   if(!n || n <= 0) return "";
@@ -1366,11 +1391,23 @@ function unpaidAmountForPatient(p){
   return n * factor * base;
 }
 
-// Total non réglé global
-function globalUnpaidAmount(){
+// Total non réglé global POUR UN MOIS (année+mois du calendrier)
+function globalUnpaidAmount(year, monthZeroBased){
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-  return patients.reduce((s,p)=> s + unpaidAmountForPatient(p), 0);
+
+  const targetPeriod = `${year}-${String(monthZeroBased+1).padStart(2,"0")}`;
+
+  // legacy : si pas de période, on l’associe au mois courant
+  const now = new Date();
+  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+
+  return patients.reduce((s,p)=>{
+    const per = (p.rejetPeriod || "").trim() || currentPeriod;
+    if (per === targetPeriod) s += unpaidAmountForPatient(p);
+    return s;
+  }, 0);
 }
+
 
 function showRejetModal(){
   patientMenu.style.display = "none";
@@ -1407,21 +1444,70 @@ function confirmRejetModal(){
     return;
   }
 
+  // stocke en attente
+  __pendingRejetData = { n, mut, sec };
+
+  // ferme le modal rejet, ouvre le modal période
+  closeRejetModal();
+  const modal = document.getElementById("rejet-period-modal");
+    // pré-remplissage avec la période existante si elle existe
+  const perInput = document.getElementById("rejet-period-input");
+  if (perInput) {
+    const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+    const p = patients[selectedPatientIndex];
+    perInput.value = (p && p.rejetPeriod) ? p.rejetPeriod : "";
+  }
+
+  if(modal) modal.style.display = "flex";
+}
+
+function cancelRejetPeriod(){
+  __pendingRejetData = null;
+  const modal = document.getElementById("rejet-period-modal");
+  if(modal) modal.style.display = "none";
+}
+
+function confirmRejetPeriod(){
+  if(!__pendingRejetData){ cancelRejetPeriod(); return; }
+
+  const input = document.getElementById("rejet-period-input");
+  const val = (input?.value || "").trim(); // "YYYY-MM"
+  if(!val){
+    alert("Choisis un mois/année.");
+    return;
+  }
+
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const p = patients[selectedPatientIndex];
-  if (!p) return;
+  if(!p) return;
 
-  p.rejetCount = n;
-  p.rejetMutuelle = mut;
-  p.rejetSecu = sec;
-  p.rejet = makeRejetText(n, mut, sec); // champ texte visible
+  p.rejetCount = __pendingRejetData.n;
+  p.rejetMutuelle = __pendingRejetData.mut;
+  p.rejetSecu = __pendingRejetData.sec;
+
+  // ✅ stocke la période
+  p.rejetPeriod = val;
+
+  // ✅ texte auto AVANT l’ancien
+  const newRejetTxt = makeRejetText(p.rejetCount, p.rejetMutuelle, p.rejetSecu);
+  const oldRejetTxt = (p.rejet || "").trim();
+
+  if (oldRejetTxt) {
+    p.rejet = oldRejetTxt.startsWith(newRejetTxt)
+      ? oldRejetTxt
+      : `${newRejetTxt} | ${oldRejetTxt}`;
+  } else {
+    p.rejet = newRejetTxt;
+  }
 
   patients[selectedPatientIndex] = p;
   localStorage.setItem("patients", JSON.stringify(patients));
 
-  closeRejetModal();
+  __pendingRejetData = null;
 
-  // refresh écrans concernés
+  const modal = document.getElementById("rejet-period-modal");
+  if(modal) modal.style.display = "none";
+
   const specialVisible = document.getElementById("special-screen").style.display === "block";
   if (specialVisible) renderSpecialList();
   else renderPatients(searchInput.value);
@@ -1432,6 +1518,7 @@ function confirmRejetModal(){
   safeRefreshCalendar();
 }
 
+      
 function clearRejetModal(){
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const p = patients[selectedPatientIndex];
@@ -1440,6 +1527,7 @@ function clearRejetModal(){
   p.rejetCount = 0;
   p.rejetMutuelle = false;
   p.rejetSecu = false;
+  p.rejetPeriod = "";
   p.rejet = "";
 
   patients[selectedPatientIndex] = p;
@@ -1456,7 +1544,6 @@ function clearRejetModal(){
   updatePinButton();
   safeRefreshCalendar();
 }
-
 
       
     // --- Sauvegarde infos ---
@@ -1659,7 +1746,6 @@ function renderCalendar() {
     else if (count >= 5) dayEl.classList.add("green");
     else if (count >= 1) dayEl.classList.add("blue");
 
-    // Pastille facturation (bas-droite)
     const pct = facturePercentage(dateStr);
     if (pct !== null) {
       const pastille = document.createElement("div");
@@ -1670,7 +1756,6 @@ function renderCalendar() {
       dayEl.appendChild(pastille);
     }
 
-    // Montant facturé de CE jour (journal persistant) — en haut-gauche
     const billedCount = getBillingCountForDate(dateStr);
     if (billedCount > 0) {
       const euros = Math.round(billedCount * 18.2);
@@ -1684,24 +1769,20 @@ function renderCalendar() {
     gridEl.appendChild(dayEl);
   }
 
-  // Total mensuel (persistant) sous le calendrier
   const monthCount = getMonthBillingSum(currentYear, currentMonth);
   const monthEuros = Math.round(monthCount * 18.2);
 
-  const unpaid = globalUnpaidAmount(); // rejets à retrancher
+  const unpaid = globalUnpaidAmount(currentYear, currentMonth);
+  const unpaidRounded = Math.round(unpaid);
   const netMonth = Math.round(monthEuros - unpaid);
 
   const monthEl = document.getElementById("calendar-month-total");
   if (monthEl) {
-    if (unpaid > 0){
-      monthEl.textContent =
-        `Total du mois : ${netMonth.toLocaleString('fr-FR')} € (-${Math.round(unpaid).toLocaleString('fr-FR')} € rejets)`;
-    } else {
-      monthEl.textContent =
-        `Total du mois : ${monthEuros.toLocaleString('fr-FR')} €`;
-    }
+    monthEl.textContent =
+      `Total du mois : ${netMonth.toLocaleString('fr-FR')} € (rejets : ${unpaidRounded.toLocaleString('fr-FR')} €)`;
   }
 }
+
 
     function prevMonth() {
       currentMonth--;
@@ -1982,14 +2063,12 @@ function renderFactureList() {
   const titleEl = document.getElementById("facture-title");
   ul.innerHTML = "";
 
-  // rows = patients avec nonFact OU rejet
   const rows = patients.map(p => {
     const nonFact = nonFactCount(p);
     const unpaid = unpaidAmountForPatient(p);
     return { p, nonFact, unpaid, key: keyName(p.nom, p.prenom) };
   }).filter(r => r.nonFact > 0 || r.unpaid > 0);
 
-  // Totaux
   const totalNonFact = rows.reduce((s,r)=> s + r.nonFact, 0);
   const totalUnpaid  = rows.reduce((s,r)=> s + r.unpaid, 0);
 
@@ -2008,7 +2087,6 @@ function renderFactureList() {
     }
   }
 
-  // Tri : nonFact desc puis unpaid desc puis nom
   rows.sort((a,b)=>
     (b.nonFact - a.nonFact) ||
     (b.unpaid - a.unpaid) ||
@@ -2018,7 +2096,6 @@ function renderFactureList() {
   rows.forEach(({p, nonFact, unpaid, key}) => {
     const li = document.createElement("li");
 
-    // 👁️‍🗨️ : détails non facturés
     const eye = makeEmoji("👁️‍🗨️", "Voir détails non facturés", ()=>{
       sessionsBackTarget = "facture";
       const idx = patients.findIndex(x => keyName(x.nom, x.prenom) === key);
@@ -2029,15 +2106,26 @@ function renderFactureList() {
     });
     li.appendChild(eye);
 
-    const nameSpan = document.createElement("span");
-    let label = `${p.nom} ${p.prenom} (${nonFact})`;
-    if (unpaid > 0){
-      label += ` (${Math.round(unpaid).toLocaleString('fr-FR')} € non réglés)`;
-    }
-    nameSpan.textContent = label;
-    li.appendChild(nameSpan);
+    // ✅ 2 lignes (nom + dessous non réglé)
+    const infoBlock = document.createElement("div");
+    infoBlock.style.display = "flex";
+    infoBlock.style.flexDirection = "column";
+    infoBlock.style.lineHeight = "1.2";
 
-    // ⚠️ rejet
+    const line1 = document.createElement("span");
+    line1.textContent = `${p.nom} ${p.prenom} (${nonFact})`;
+    infoBlock.appendChild(line1);
+
+    if (unpaid > 0){
+      const line2 = document.createElement("span");
+      line2.textContent = `(${Math.round(unpaid).toLocaleString('fr-FR')} € non réglés)`;
+      line2.style.fontSize = "0.9rem";
+      line2.style.opacity = "0.9";
+      infoBlock.appendChild(line2);
+    }
+
+    li.appendChild(infoBlock);
+
     const hasRejet = unpaid > 0 || (p.rejet && p.rejet.trim());
     if (hasRejet) {
       const txt = p.rejet && p.rejet.trim()
@@ -2049,7 +2137,6 @@ function renderFactureList() {
       }));
     }
 
-    // ❓ ordonnance non scannée
     if (p.ordNonScan) {
       li.appendChild(makeEmoji("❓", "Ordonnance non scannée", ()=>{
         const info = (p.ordDetails||"").trim();
@@ -2058,14 +2145,11 @@ function renderFactureList() {
       }));
     }
 
-    // 📑 ordonnance à renouveler
-    if (p.ordRenouv) {
-      li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
-    }
+    if (p.ordRenouv) li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
 
-    // 💸 facturer à droite (uniquement si nonFact > 0)
     const right = document.createElement("span");
     right.className = "right-edge";
+
     if (nonFact > 0){
       const billEmoji = makeEmoji("💸", "Facturer jusqu'à aujourd'hui", ()=>{
         const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
@@ -2092,19 +2176,21 @@ function renderFactureList() {
       });
       right.appendChild(billEmoji);
     }
+
     li.appendChild(right);
 
-    // Couleurs
+    // Couleurs + rose vif si nonFact=0 mais rejet>0
     if (nonFact > 20)        li.style.color = "red";
     else if (nonFact >= 10)  li.style.color = "orange";
     else if (nonFact >= 5)   li.style.color = "yellow";
     else if (nonFact >= 2)   li.style.color = "green";
     else if (nonFact >= 1)   li.style.color = "skyblue";
-    else if (unpaid > 0)     li.style.color = "orange";
+    else if (unpaid > 0)     li.classList.add("zero-nonfact");
 
     ul.appendChild(li);
   });
 }
+
 
 
 // ====== Listes de séances d'un patient (facturées / non facturées / toutes) ======
@@ -2444,39 +2530,31 @@ function showOcrResults(lines) {
 
     document.getElementById("ocr-process-btn").addEventListener("click", processOcrFiles);
 
-   document.getElementById("ocr-import-confirm").addEventListener("click", () => {
+document.getElementById("ocr-import-confirm").addEventListener("click", () => {
   const div = document.getElementById("ocr-results");
   const cbs = div.querySelectorAll("input[type=checkbox]:checked");
   const selectedNames = Array.from(cbs).map(cb => cb.value);
 
-  // Date de présence (aujourd'hui par défaut)
   let dateStr = document.getElementById("ocr-presence-date").value.trim();
   if (!dateStr) dateStr = formatDate(new Date());
   else dateStr = normalizeDate(dateStr);
 
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-
-  // Set de clés normalisées existantes (utile si tu veux l’utiliser ailleurs)
   const existingKeys = new Set(patients.map(p => keyName(p.nom, p.prenom)));
 
   selectedNames.forEach(name => {
-    // cleanOcrText() renvoie déjà "NOM Prénom" strict → split simple
     const parts = name.split(" ");
     const nom = parts[0] || "";
     const prenom = parts.slice(1).join(" ") || "";
-
     const k = keyName(nom, prenom);
 
-    // 1) Match EXACT par clé normalisée
     let match = patients.find(p => keyName(p.nom, p.prenom) === k);
 
-    // 2) Sinon, fallback flou (plus strict que ton 0.7 → 0.85)
     if (!match) {
       match = patients.find(p => similarity(p.nom + " " + p.prenom, name) > 0.85);
     }
 
     if (!match) {
-      // Crée le patient et ajoute la présence du jour choisi
       patients.push({
         nom,
         prenom,
@@ -2486,12 +2564,15 @@ function showOcrResults(lines) {
         presences: [dateStr],
         lastFactureDate: null,
         bilans:[],
-          rejetCount: 0,
-  rejetMutuelle: false,
-  rejetSecu: false
+
+        rejetCount: 0,
+        rejetMutuelle: false,
+        rejetSecu: false,
+
+        // ✅ période du rejet
+        rejetPeriod: ""
       });
     } else {
-      // Ajoute la présence si elle n’existe pas
       if (!match.presences.includes(dateStr)) match.presences.push(dateStr);
     }
   });
@@ -2500,6 +2581,7 @@ function showOcrResults(lines) {
   hideOcrScreen();
   showMainScreen();
 });
+
 
 document.getElementById("add-ocr-process-btn").addEventListener("click", processAddOcrFiles);
 document.getElementById("add-ocr-import-btn").addEventListener("click", importAddOcrSelection);
@@ -2907,31 +2989,33 @@ function importAddOcrSelection() {
     const nom = (parts[0] || "").trim();
     const prenom = (parts.slice(1).join(" ") || "").trim();
 
-    // dédup strict par clé normalisée
     const k = keyName(nom, prenom);
     const exists = patients.some(p => keyName(p.nom, p.prenom) === k);
-   if (!exists) {
-  patients.push({
-    nom,
-    prenom,
-    phone:"",
-    rejet:"",
-    notes:"",
-    presences:[],
-    lastFactureDate:null,
-    bilans:[],
-      rejetCount: 0,
-  rejetMutuelle: false,
-  rejetSecu: false
-  });
-}
+
+    if (!exists) {
+      patients.push({
+        nom,
+        prenom,
+        phone:"",
+        rejet:"",
+        notes:"",
+        presences:[],
+        lastFactureDate:null,
+        bilans:[],
+
+        rejetCount: 0,
+        rejetMutuelle: false,
+        rejetSecu: false,
+
+        // ✅ période du rejet
+        rejetPeriod: ""
+      });
+    }
   });
 
   localStorage.setItem("patients", JSON.stringify(patients));
-  // rafraîchit la liste principale
   renderPatients(document.getElementById("searchInput").value);
 
-  // feedback et reset de la zone
   alert("Ajout terminé.");
   document.getElementById("add-ocr-results").innerHTML = "";
   document.getElementById("add-ocr-import-btn").style.display = "none";
@@ -3142,6 +3226,18 @@ C.bilans = Array.from(setBil);
   C.rejetMutuelle = !!(C.rejetMutuelle || D.rejetMutuelle);
   C.rejetSecu     = !!(C.rejetSecu     || D.rejetSecu);
 
+    // ✅ NOUVEAU : fusion des périodes de rejet
+  const cPer = (C.rejetPeriod || "").trim();
+  const dPer = (D.rejetPeriod || "").trim();
+
+  if (!cPer) {
+    C.rejetPeriod = dPer;
+  } else if (dPer && dPer !== cPer) {
+    // si périodes différentes, on garde la plus récente (format YYYY-MM)
+    C.rejetPeriod = (cPer > dPer) ? cPer : dPer;
+  }
+
+
   // met à jour le texte old-school "rejet"
   if (C.rejetCount > 0) {
     C.rejet = makeRejetText(C.rejetCount, C.rejetMutuelle, C.rejetSecu);
@@ -3284,6 +3380,28 @@ updatePinButton();  // colore/clignote le 📌 dès le départ
       <button onclick="confirmRejetModal()">Valider</button>
       <button onclick="closeRejetModal()">Annuler</button>
       <button onclick="clearRejetModal()" style="margin-left:auto;">Effacer ⚠️</button>
+    </div>
+  </div>
+</div>
+<!-- Modal Période Rejet -->
+<div id="rejet-period-modal" style="display:none;">
+  <div class="menu-box">
+    <h3>Période du rejet</h3>
+
+    <p style="margin:.4rem 0 .6rem 0;">
+      À quel mois appartient ce rejet ?
+    </p>
+
+    <input type="month" id="rejet-period-input"
+           style="width:100%;margin-bottom:.6rem;padding:.6rem;border:none;border-radius:6px;">
+
+    <div style="display:flex;gap:.5rem;margin-top:.6rem;">
+      <button onclick="confirmRejetPeriod()" style="flex:1;background:#1f3f7a;border:none;padding:.6rem;border-radius:6px;color:#fff;cursor:pointer;">
+        Valider
+      </button>
+      <button onclick="cancelRejetPeriod()" style="flex:1;background:#1f3f7a;border:none;padding:.6rem;border-radius:6px;color:#fff;cursor:pointer;">
+        Annuler
+      </button>
     </div>
   </div>
 </div>
