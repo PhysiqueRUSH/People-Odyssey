@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = "po-cache-v1.65";
+const CACHE_NAME = "po-cache-v1.66";
 const ASSETS = [
   "./",
   "./index.html",
