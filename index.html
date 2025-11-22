@@ -2546,8 +2546,8 @@ function renderFactureList() {
 
 
 
-// ====== Écran unique "Séances" d'un patient (facturées puis non facturées) ======
-// (filterMode est désormais ignoré mais conservé pour compatibilité rétroactive)
+// ====== Écran unique "Séances" d'un patient (facturées / non facturées / à venir) ======
+// (filterMode est conservé pour compatibilité mais ignoré)
 function showFactureList(filterMode) {
   if (selectedPatientIndex === null) return;
 
@@ -2563,54 +2563,103 @@ function showFactureList(filterMode) {
   const todayStrVal = todayStr();
   const last = p.lastFactureDate ? normalizeDate(p.lastFactureDate) : null;
 
-  // -------- 1) Construire la liste complète des séances --------
-  // présences + bilans + (programmée aujourd'hui si pas déjà réelle)
+  // -------- 1) Séances réelles (présences + bilans) --------
   const sessions = [];
 
-  (p.presences || []).forEach(d => {
-    sessions.push({ date: d, type: "normal" });
-  });
+  (p.presences || []).forEach(d => sessions.push({ date: d, type: "normal" }));
+  (p.bilans || []).forEach(d => sessions.push({ date: d, type: "bilan" }));
 
-  (p.bilans || []).forEach(d => {
-    sessions.push({ date: d, type: "bilan" });
-  });
-
-  // ✅ Ajout séance programmée d'AUJOURD'HUI uniquement
+  // ✅ Séance programmée d'AUJOURD'HUI si pas déjà réelle
   if (isScheduledOnDate(p, todayStrVal) && !hasRealSessionOnDate(p, todayStrVal)) {
     sessions.push({ date: todayStrVal, type: "scheduled" });
   }
 
-  // Tri chronologique global
+  // -------- 2) Générer les séances programmées FUTURES --------
+  let futureScheduledDates = [];
+  let infiniteSchedule = false;  // true si repeat sans fin
+
+  if (isProgrammed(p)) {
+    const r = p.repeat;
+
+    const tomorrow = parseDateFR(todayStrVal);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    if (r.endISO) {
+      const endDate = isoToDate(r.endISO);
+      if (endDate) {
+        const cur = new Date(tomorrow);
+        cur.setHours(0,0,0,0);
+        endDate.setHours(0,0,0,0);
+
+        while (cur <= endDate) {
+          const ds = formatDate(cur);
+          // ✅ on n'ajoute la programmation future QUE si aucune séance réelle ce jour-là
+          if (isScheduledOnDate(p, ds) && !hasRealSessionOnDate(p, ds)) {
+            futureScheduledDates.push(ds);
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+    } else {
+      // pas de fin => 3 prochaines programmées puis résumé
+      infiniteSchedule = true;
+      const cur = new Date(tomorrow);
+      cur.setHours(0,0,0,0);
+
+      // sécurité anti-boucle (max 1 an de scan)
+      const limitDate = new Date(cur);
+      limitDate.setDate(limitDate.getDate() + 366);
+
+      while (futureScheduledDates.length < 3 && cur <= limitDate) {
+        const ds = formatDate(cur);
+        if (isScheduledOnDate(p, ds) && !hasRealSessionOnDate(p, ds)) {
+          futureScheduledDates.push(ds);
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+  }
+
+  // Ajoute les futures programmées à la liste globale
+  futureScheduledDates.forEach(d => sessions.push({ date: d, type: "scheduled" }));
+
+  // Tri global chronologique
   sessions.sort((a, b) => parseDateFR(a.date) - parseDateFR(b.date));
 
-  // -------- 2) Répartition facturées / non facturées --------
+  // -------- 3) Répartition facturées / non facturées / futures --------
   const billed = [];
   const nonBilledPastToday = []; // non facturées et <= aujourd'hui
-  const futureNonBilled = [];    // à venir (si présence future ajoutée manuellement)
+  const futureNonBilled = [];    // à venir (réelles + programmées)
 
   sessions.forEach(s => {
     const d = s.date;
     const isFuture = compareDates(d, todayStrVal) > 0;
     const isBilled = !!last && compareDates(d, last) <= 0;
 
-    if (isBilled) {
-      billed.push(s);
-    } else {
-      if (isFuture) futureNonBilled.push(s);
-      else nonBilledPastToday.push(s);
-    }
+    if (isBilled) billed.push(s);
+    else if (isFuture) futureNonBilled.push(s);
+    else nonBilledPastToday.push(s);
   });
 
-  // -------- 3) Titre écran --------
+  // -------- 4) Helpers rendu --------
   titleEl.textContent = `${p.nom} ${p.prenom} — Séances`;
 
-  // Petit helper pour insérer un séparateur lisible
   function addSectionHeader(text) {
     const li = document.createElement("li");
     li.textContent = text;
     li.style.fontWeight = "bold";
     li.style.marginTop = ".7rem";
     li.style.opacity = "0.95";
+    li.style.listStyleType = "none";
+    ul.appendChild(li);
+  }
+
+  function addSubHeader(text) {
+    const li = document.createElement("li");
+    li.textContent = text;
+    li.style.fontWeight = "bold";
+    li.style.marginTop = ".5rem";
+    li.style.opacity = "0.85";
     li.style.listStyleType = "none";
     ul.appendChild(li);
   }
@@ -2622,7 +2671,6 @@ function showFactureList(filterMode) {
     if (s.type === "scheduled") txt += " (Programmé)";
     li.textContent = txt;
 
-    // Séances futures en bleu ciel (comme avant le mode "toutes")
     if (compareDates(s.date, todayStrVal) > 0) {
       li.style.color = "skyblue";
     }
@@ -2636,34 +2684,52 @@ function showFactureList(filterMode) {
     ul.appendChild(li);
   }
 
-  // -------- 4) Rendu section FACTURÉES --------
-  addSectionHeader(`Séances facturées (${billed.length})`);
+  // Résumé pour programmation infinie
+  function addInfiniteRepeatSummary(){
+    if (!isProgrammed(p)) return;
+    const r = p.repeat || {};
+    const days = Array.isArray(r.days) ? r.days.slice() : [];
+    if (days.length === 0) return;
 
-  if (billed.length === 0) {
-    addEmptyDash();
-  } else {
-    billed.forEach(addSessionLi);
+    const DOW_LABELS = {
+      1:"Lun", 2:"Mar", 3:"Mer", 4:"Jeu", 5:"Ven", 6:"Sam", 0:"Dim"
+    };
+    const labels = days.map(d => DOW_LABELS[d]).filter(Boolean).join(", ");
+
+    let summary = `+ tous les ${labels}`;
+    if (r.freq === "BIWEEKLY") summary += " toutes les deux semaines";
+
+    const li = document.createElement("li");
+    li.textContent = summary;
+    li.style.opacity = "0.8";
+    li.style.fontStyle = "italic";
+    ul.appendChild(li);
   }
 
-  // -------- 5) Rendu section NON FACTURÉES --------
-  const nonFactCountLocal = nonBilledPastToday.length;
-  const futureCountLocal  = futureNonBilled.length;
+  // -------- 5) FACTURÉES --------
+  addSectionHeader(`Séances facturées (${billed.length})`);
+  if (billed.length === 0) addEmptyDash();
+  else billed.forEach(addSessionLi);
 
-  const headerNonBilled =
-    futureCountLocal > 0
-      ? `Séances non facturées (${nonFactCountLocal}) — à venir (${futureCountLocal})`
-      : `Séances non facturées (${nonFactCountLocal})`;
+  // -------- 6) NON FACTURÉES (passé/aujourd'hui) --------
+  addSectionHeader(`Séances non facturées (${nonBilledPastToday.length})`);
+  if (nonBilledPastToday.length === 0) addEmptyDash();
+  else nonBilledPastToday.forEach(addSessionLi);
 
-  addSectionHeader(headerNonBilled);
+  // -------- 7) À VENIR (futures réelles + futures programmées) --------
+  if (futureNonBilled.length > 0 || infiniteSchedule) {
+    const futureCount = futureNonBilled.length;
+    const label = infiniteSchedule ? `À venir (${futureCount}+)` : `À venir (${futureCount})`;
+    addSubHeader(label);
 
-  const nonBilledAll = nonBilledPastToday.concat(futureNonBilled);
+    if (futureNonBilled.length === 0) addEmptyDash();
+    else futureNonBilled.forEach(addSessionLi);
 
-  if (nonBilledAll.length === 0) {
-    addEmptyDash();
-  } else {
-    nonBilledAll.forEach(addSessionLi);
+    // ✅ Programmation sans fin → ajoute le récap après les 3 prochaines dates
+    if (infiniteSchedule) addInfiniteRepeatSummary();
   }
 }
+
 
 
 
