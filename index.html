@@ -206,7 +206,19 @@
       padding: 0 1rem;
     }
 
+/* ✅ SPECIAL-SCREEN : ne pas superposer les boutons à l’OCR */
+#special-screen .bottom-actions{
+  position: static;      /* redevient dans le flux => toujours sous l’OCR */
+  margin-top: 1rem;      /* espace au-dessus */
+  padding: 0;            /* évite le padding de la version fixed */
+}
 
+/* (optionnel) un peu d’air en bas de l’écran spécial */
+#special-screen{
+  padding-bottom: 1.5rem;
+}
+
+    
 .facture-estimate{
   font-size: 0.95rem;   /* légèrement moins gros que le titre */
   font-style: italic;
@@ -1344,6 +1356,11 @@ function renderPatients(filter = "") {
     // ✅ Renfo du soir (tags esthétiques)
   renfoPresences: [],
 
+     // ✅ ordonnances
+  ordNonScan: false,
+  ordRenouv: false,
+  ordDetails: "",
+
     // Rejet structuré
     rejetCount: 0,
     rejetMutuelle: false,
@@ -1817,43 +1834,47 @@ function clearRejetModal(){
 
       
     // --- Sauvegarde infos ---
- function saveInfo() {
+function saveInfo() {
   let patients = JSON.parse(localStorage.getItem("patients") || "[]");
-  if (selectedPatientIndex === null) return;
+  if (selectedPatientIndex === null || !patients[selectedPatientIndex]) return;
 
   const idx = selectedPatientIndex;
-  const newNom = (document.getElementById("info-nom").value || "").trim();
-  const newPrenom = (document.getElementById("info-prenom").value || "").trim();
-  if (!newNom && !newPrenom) {
-    alert("Veuillez renseigner au moins Nom ou Prénom.");
+  const p = patients[idx];
+
+  const oldNom = p.nom || "";
+  const oldPrenom = p.prenom || "";
+  const oldKey = keyName(oldNom, oldPrenom);
+
+  const nomInput = (document.getElementById("info-nom").value || "").trim();
+  const prenomInput = (document.getElementById("info-prenom").value || "").trim();
+
+  // Nom MAJ si saisi, sinon garde l'ancien
+  const newNom = nomInput ? nomInput.toUpperCase() : oldNom;
+  const newPrenom = prenomInput || oldPrenom;
+
+  if (!newNom || !newPrenom) {
+    alert("Veuillez renseigner au moins Nom et Prénom.");
     return;
   }
 
-  const p = patients[idx];
-  const prevNom = p.nom, prevPrenom = p.prenom;
-
-  // Prépare l'objet à jour (sans toucher aux séances/notes)
-  p.nom = newNom || p.nom;
-  p.prenom = newPrenom || p.prenom;
+  p.nom = newNom;
+  p.prenom = newPrenom;
   p.phone = (document.getElementById("info-phone").value || "").trim();
   p.rejet = (document.getElementById("info-rejet").value || "").trim();
   p.notes = (document.getElementById("info-notes").value || "").trim();
 
-  // --- Sauvegarde ordonnances ---
-const cbNon = document.getElementById("info-ord-nonscan");
-const cbRen = document.getElementById("info-ord-renouv");
-const det   = document.getElementById("info-ord-details");
+  // --- Ordonnances ---
+  const cbNon = document.getElementById("info-ord-nonscan");
+  const cbRen = document.getElementById("info-ord-renouv");
+  const det   = document.getElementById("info-ord-details");
 
-p.ordNonScan = !!cbNon.checked;
-p.ordRenouv  = !!cbRen.checked;
-p.ordDetails = (det.value || "").trim();
+  p.ordNonScan = !!cbNon.checked;
+  p.ordRenouv  = !!cbRen.checked;
+  p.ordDetails = (det.value || "").trim();
 
-// garantir l'exclusivité aussi côté data
-if(p.ordNonScan && p.ordRenouv) p.ordRenouv = false;
-if(!p.ordNonScan) p.ordDetails = (p.ordDetails||""); // on conserve ce que tu as saisi, même masqué
- 
+  if (p.ordNonScan && p.ordRenouv) p.ordRenouv = false;
 
-  // Cherche un autre patient EXACTEMENT identique après renommage
+  // ---- Détection doublon exact ----
   const dupIndex = patients.findIndex((q, i) =>
     i !== idx && samePerson(q.nom, q.prenom, p.nom, p.prenom)
   );
@@ -1866,31 +1887,46 @@ if(!p.ordNonScan) p.ordDetails = (p.ordDetails||""); // on conserve ce que tu as
       `B) ${q.nom} ${q.prenom}\n\n`+
       `Souhaites-tu FUSIONNER leurs séances et conserver un seul patient ?`
     );
+
     if (ok) {
-      // Fusionne les présences et conserve p (celui qu'on édite)
       p.presences = mergeUniqueDates(p.presences, q.presences);
-      // ✅ AJOUT : fusion bilans + renfoPresences
-p.bilans = mergeUniqueDates(p.bilans, q.bilans);
-p.renfoPresences = mergeUniqueDates(p.renfoPresences, q.renfoPresences);
-      // Option : garder les infos non vides de q si p est vide
+      p.bilans = mergeUniqueDates(p.bilans, q.bilans);
+      p.renfoPresences = mergeUniqueDates(p.renfoPresences, q.renfoPresences);
+
       if (!p.phone && q.phone) p.phone = q.phone;
       if (!p.rejet && q.rejet) p.rejet = q.rejet;
       if (!p.notes && q.notes) p.notes = q.notes;
-      // lastFactureDate : garde la plus récente
+
       if (q.lastFactureDate && (!p.lastFactureDate || compareDates(q.lastFactureDate, p.lastFactureDate) > 0)) {
         p.lastFactureDate = q.lastFactureDate;
       }
-      // Supprime l’autre fiche
+
       patients.splice(dupIndex, 1);
-      // Recalcule selectedPatientIndex si besoin
       selectedPatientIndex = patients.indexOf(p);
+    }
+  }
+
+  // ✅ Mise à jour des clés externes si changement de nom/prénom
+  const newKey = keyName(p.nom, p.prenom);
+  if (oldKey !== newKey) {
+    // 1) Liste spéciale
+    const sk = getSpecialKeys();
+    const replaced = sk.map(k => k === oldKey ? newKey : k);
+    setSpecialKeys(Array.from(new Set(replaced)));
+
+    // 2) billedToday (pour ne pas perdre le 💰 du jour si on renomme)
+    const bt = getBilledTodayMap();
+    if (bt[oldKey] && !bt[newKey]) {
+      bt[newKey] = bt[oldKey];
+      delete bt[oldKey];
+      localStorage.setItem("billedToday", JSON.stringify(bt));
     }
   }
 
   patients[selectedPatientIndex] = p;
   localStorage.setItem("patients", JSON.stringify(patients));
+
   showMainScreen();
-  renderPatients(searchInput.value);
 }
 
 
@@ -2769,9 +2805,12 @@ function showFactureList(filterMode) {
 // OCR WHATSAPP (LISTE SPÉCIALE)
 // =========================
 
-// mots à ignorer dans les votes WhatsApp
+// mots à ignorer dans les votes WhatsApp (à compléter si besoin)
 const WHATSAPP_STOPWORDS = new Set([
-  "sport", "SPORT", "Sport"
+  "sport","present","présent","ok","okay","oui","non","merci","stp","svp",
+  "renfo","soir","seance","séance","aujourd","hui","demain","hier",
+  "lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche",
+  "message","messages","appel","appels","whatsapp"
 ]);
 
 function stripPunct(s){
@@ -2786,11 +2825,12 @@ function softSim(a,b){
   return Math.max(similarity(a,b), similarity(a2,b2));
 }
 
-// Nettoyage texte OCR WhatsApp -> liste de "candidats" (1 ou plusieurs tokens)
+// Nettoyage texte OCR WhatsApp -> liste de "candidats" orientés prénoms/noms
 function extractWhatsappCandidates(rawText){
   const lines = (rawText||"").split("\n")
-    .map(l => l.replace(/\d{1,2}\s+\w+\s+\d{4}.*/i, ""))  // enlève "20 novembre, 18:19"
-    .map(l => l.replace(/\d{1,2}:\d{2}/g,""))            // heures simples
+    // enlève dates/horaires typiques WhatsApp
+    .map(l => l.replace(/\d{1,2}\s+\w+\s+\d{4}.*/i, ""))  // "20 novembre 2025 ..."
+    .map(l => l.replace(/\d{1,2}:\d{2}/g,""))            // "18:19"
     .map(l => l.replace(/[|@+]/g," "))
     .map(l => l.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ \-’']/g," ")) // lettres + tirets + apostrophes
     .map(l => l.replace(/\s+/g," ").trim())
@@ -2800,23 +2840,33 @@ function extractWhatsappCandidates(rawText){
   const seen = new Set();
 
   for (const line of lines){
-    // tokens en gardant accents/tirets
     let toks = line.split(/\s+/).filter(Boolean);
 
-    // supprime stopwords et initiales seules (ex: "G")
+    // supprime stopwords / mini-tokens
     toks = toks.filter(t=>{
-      const low = t.toLowerCase();
+      const low = normName(t);
+      if (!low) return false;
       if (WHATSAPP_STOPWORDS.has(low)) return false;
-      if (t.length === 1) return false;  // initiales
+      if (low.length < 2) return false;  // évite "G" "D" etc
       return true;
     });
 
     if (toks.length === 0) continue;
 
-    // on garde l'expression entière comme candidat
-    const cand = toks.join(" ");
-    const key = normName(cand);
-    if (!seen.has(key)){
+    const candList = [];
+
+    if (toks.length === 1){
+      candList.push(toks[0]);
+    } else {
+      // cas "NOM Prenom" ou phrase → on garde aussi les tokens seuls
+      toks.forEach(t=> candList.push(t));
+      // + le duo de début (souvent "NOM Prenom")
+      candList.push(toks.slice(0,2).join(" "));
+    }
+
+    for (const cand of candList){
+      const key = normName(cand);
+      if (!key || seen.has(key)) continue;
       seen.add(key);
       out.push(cand);
     }
@@ -2827,6 +2877,8 @@ function extractWhatsappCandidates(rawText){
 // Trouve le meilleur match liste spéciale à partir d'un candidat WhatsApp
 function bestMatchSpecial(cand, specialPatients){
   const candNorm = normName(cand);
+  const candFlat = stripPunct(candNorm);
+  const candTokens = candFlat.split(/\s+/).filter(Boolean);
 
   let best = null;
   let bestScore = 0;
@@ -2834,19 +2886,30 @@ function bestMatchSpecial(cand, specialPatients){
   for (const sp of specialPatients){
     const nomNorm = normName(sp.nom);
     const prenomNorm = normName(sp.prenom);
+    const prenomFlat = stripPunct(prenomNorm);
+    const prenomTokens = prenomFlat.split(/\s+/).filter(Boolean);
 
-    // tokens de prénom (gère composés)
-    const prenomTokens = stripPunct(prenomNorm).split(/\s+/).filter(Boolean);
-
-    // match direct sur nom / prénom / token prénom
     let score = 0;
-    if (candNorm === nomNorm) score = 1;
-    if (candNorm === prenomNorm) score = Math.max(score, 1);
-    if (prenomTokens.includes(stripPunct(candNorm))) score = Math.max(score, 1);
 
-    // fuzzy (Anne-Do vs Anne-Dominique)
-    score = Math.max(score, softSim(candNorm, prenomNorm));
-    score = Math.max(score, softSim(candNorm, nomNorm));
+    // exacts ou inclusions simples
+    if (candNorm === nomNorm || candNorm === prenomNorm) score = 1;
+    if (nomNorm.includes(candNorm) || prenomFlat.includes(candFlat)) score = Math.max(score, 0.95);
+
+    candTokens.forEach(ct=>{
+      if (ct === nomNorm) score = Math.max(score, 1);
+      if (ct === prenomNorm) score = Math.max(score, 1);
+      if (prenomTokens.includes(ct)) score = Math.max(score, 1);
+
+      // prefix (ex: "anne do" vs "anne dominique")
+      if (prenomFlat.startsWith(ct) && ct.length >= 3) score = Math.max(score, 0.9);
+
+      // fuzzy
+      score = Math.max(score, softSim(ct, prenomNorm));
+      score = Math.max(score, softSim(ct, nomNorm));
+      prenomTokens.forEach(pt=>{
+        score = Math.max(score, softSim(ct, pt));
+      });
+    });
 
     if (score > bestScore){
       bestScore = score;
@@ -2854,11 +2917,13 @@ function bestMatchSpecial(cand, specialPatients){
     }
   }
 
-  // seuil : au moins ~0.78 pour surnom/troncature
-  if (best && bestScore >= 0.78) return best;
+  // seuil adaptatif : plus tolérant pour prénoms courts
+  const len = candTokens.join("").length;
+  const threshold = len <= 4 ? 0.70 : len <= 6 ? 0.75 : 0.78;
+
+  if (best && bestScore >= threshold) return best;
   return null;
 }
-
 
 
     // --- OCR Doctolib ---
@@ -3185,6 +3250,9 @@ document.getElementById("ocr-import-confirm").addEventListener("click", () => {
         lastFactureDate: null,
         bilans: [],
         renfoPresences: [],
+         ordNonScan: false,
+  ordRenouv: false,
+  ordDetails: "",
         rejetCount: 0,
         rejetMutuelle: false,
         rejetSecu: false,
@@ -3403,8 +3471,7 @@ function renderSpecialList() {
     const deleteBtn = document.createElement("button");
     deleteBtn.innerHTML = "🗑️";
     deleteBtn.className = "delete-btn";
-    deleteBtn.deleteBtn;
-    deleteBtn.onclick = (e) => {
+       deleteBtn.onclick = (e) => {
       e.stopPropagation();
       deletePatient(i);
       renderSpecialList();
@@ -3711,6 +3778,11 @@ function importAddOcrSelection() {
         
   // ✅ Renfo du soir (tags esthétiques)
   renfoPresences: [],
+
+         // ✅ ordonnances
+  ordNonScan: false,
+  ordRenouv: false,
+  ordDetails: "",
         
         rejetCount: 0,
         rejetMutuelle: false,
@@ -3740,7 +3812,11 @@ async function processSpecialWhatsappOcr(){
   zone.innerHTML = "🔍 OCR WhatsApp en cours...";
   btnImport.style.display = "none";
 
-  const { data:{ text } } = await Tesseract.recognize(file, "fra");
+  const { data:{ text } } = await Tesseract.recognize(
+  file,
+  "fra+eng",
+  { tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀ-ÖØ-öø-ÿ-’' " }
+);
 
   const candidates = extractWhatsappCandidates(text); // ["Damien", "Olivier", "Anne-Do", ...]
 
