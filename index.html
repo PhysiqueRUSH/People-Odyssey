@@ -780,11 +780,9 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     <button onclick="addPresenceOffset(1)">Présent demain</button>
     <button onclick="showPresenceSelection()">Sélectionner les présences</button>
     <button onclick="addBilanMenu()">Ajouter Bilan</button>
-    <button onclick="closeMenuAndShowFactureList(true)">Liste séances facturées</button>
-    <button onclick="closeMenuAndShowFactureList(false)">Liste séances non facturées</button>
-    <button onclick="closeMenuAndShowFactureList()">Liste de toutes les séances</button>
+    <button onclick="closeMenuAndShowFactureList()">Séances</button>
     <button onclick="showLastFactureScreen()">Date de la dernière facturation</button>
-<button id="special-toggle-btn">Ajouter à la liste spéciale</button>
+    <button id="special-toggle-btn">Ajouter à la liste spéciale</button>
     <button onclick="renfoDuSoir()">Renfo du soir</button>
     <button onclick="showRejetModal()">Rejet ⚠️</button>
     <button onclick="ordonnanceOK()">Ordonnance OK</button>
@@ -2548,8 +2546,8 @@ function renderFactureList() {
 
 
 
-// ====== Listes de séances d'un patient (facturées / non facturées / toutes) ======
-// filterMode: true = facturées, false = non facturées (<= aujourd'hui), undefined = toutes (inclut futur en bleu ciel)
+// ====== Écran unique "Séances" d'un patient (facturées puis non facturées) ======
+// (filterMode est désormais ignoré mais conservé pour compatibilité rétroactive)
 function showFactureList(filterMode) {
   if (selectedPatientIndex === null) return;
 
@@ -2562,74 +2560,111 @@ function showFactureList(filterMode) {
   const titleEl = document.getElementById("patient-sessions-title");
   ul.innerHTML = "";
 
-  const todayStrVal = formatDate(new Date());
+  const todayStrVal = todayStr();
   const last = p.lastFactureDate ? normalizeDate(p.lastFactureDate) : null;
 
-  // Construire la liste complète : présences + bilans + (programmée aujourd'hui si pas déjà réelle)
+  // -------- 1) Construire la liste complète des séances --------
+  // présences + bilans + (programmée aujourd'hui si pas déjà réelle)
   const sessions = [];
 
   (p.presences || []).forEach(d => {
-    sessions.push({ date:d, type:"normal" });
+    sessions.push({ date: d, type: "normal" });
   });
 
   (p.bilans || []).forEach(d => {
-    sessions.push({ date:d, type:"bilan" });
+    sessions.push({ date: d, type: "bilan" });
   });
 
   // ✅ Ajout séance programmée d'AUJOURD'HUI uniquement
   if (isScheduledOnDate(p, todayStrVal) && !hasRealSessionOnDate(p, todayStrVal)) {
-    sessions.push({ date: todayStrVal, type:"scheduled" });
+    sessions.push({ date: todayStrVal, type: "scheduled" });
   }
 
-  // Tri chronologique
-  sessions.sort((a, b) => {
-    const [ja, ma, aa] = a.date.split("/").map(Number);
-    const [jb, mb, ab] = b.date.split("/").map(Number);
-    return new Date(aa, ma - 1, ja) - new Date(ab, mb - 1, jb);
+  // Tri chronologique global
+  sessions.sort((a, b) => parseDateFR(a.date) - parseDateFR(b.date));
+
+  // -------- 2) Répartition facturées / non facturées --------
+  const billed = [];
+  const nonBilledPastToday = []; // non facturées et <= aujourd'hui
+  const futureNonBilled = [];    // à venir (si présence future ajoutée manuellement)
+
+  sessions.forEach(s => {
+    const d = s.date;
+    const isFuture = compareDates(d, todayStrVal) > 0;
+    const isBilled = !!last && compareDates(d, last) <= 0;
+
+    if (isBilled) {
+      billed.push(s);
+    } else {
+      if (isFuture) futureNonBilled.push(s);
+      else nonBilledPastToday.push(s);
+    }
   });
 
-  // Nombre de non-facturées (<= aujourd'hui)
-  const nonFactCountLocal = sessions.reduce((cnt, s) => {
-    const d = s.date;
-    const isPastOrToday = compareDates(d, todayStrVal) <= 0;
-    const isNonFact = !last || compareDates(d, last) > 0;
-    return cnt + (isPastOrToday && isNonFact ? 1 : 0);
-  }, 0);
+  // -------- 3) Titre écran --------
+  titleEl.textContent = `${p.nom} ${p.prenom} — Séances`;
 
-  const base =
-    filterMode === true   ? "Séances facturées" :
-    filterMode === false  ? "Séances non facturées" :
-                            "Toutes les séances";
-  titleEl.textContent = `${p.nom} ${p.prenom} — ${base} (${nonFactCountLocal})`;
+  // Petit helper pour insérer un séparateur lisible
+  function addSectionHeader(text) {
+    const li = document.createElement("li");
+    li.textContent = text;
+    li.style.fontWeight = "bold";
+    li.style.marginTop = ".7rem";
+    li.style.opacity = "0.95";
+    li.style.listStyleType = "none";
+    ul.appendChild(li);
+  }
 
-  // Filtrage selon le mode
-  const filtered = sessions.filter(s => {
-    const d = s.date;
-    if (filterMode === true) {          // facturées
-      return !!last && compareDates(d, last) <= 0;
-    }
-    if (filterMode === false) {         // non facturées (<= aujourd’hui)
-      const isPastOrToday = compareDates(d, todayStrVal) <= 0;
-      const isNonFact = !last || compareDates(d, last) > 0;
-      return isPastOrToday && isNonFact;
-    }
-    return true;                        // toutes
-  });
-
-  // Rendu avec mentions
-  filtered.forEach(s => {
+  function addSessionLi(s) {
     const li = document.createElement("li");
     let txt = s.date;
     if (s.type === "bilan") txt += " (Bilan)";
     if (s.type === "scheduled") txt += " (Programmé)";
     li.textContent = txt;
 
-    if (filterMode === undefined && compareDates(s.date, todayStrVal) > 0) {
+    // Séances futures en bleu ciel (comme avant le mode "toutes")
+    if (compareDates(s.date, todayStrVal) > 0) {
       li.style.color = "skyblue";
     }
     ul.appendChild(li);
-  });
+  }
+
+  function addEmptyDash() {
+    const li = document.createElement("li");
+    li.textContent = "—";
+    li.style.opacity = "0.7";
+    ul.appendChild(li);
+  }
+
+  // -------- 4) Rendu section FACTURÉES --------
+  addSectionHeader(`Séances facturées (${billed.length})`);
+
+  if (billed.length === 0) {
+    addEmptyDash();
+  } else {
+    billed.forEach(addSessionLi);
+  }
+
+  // -------- 5) Rendu section NON FACTURÉES --------
+  const nonFactCountLocal = nonBilledPastToday.length;
+  const futureCountLocal  = futureNonBilled.length;
+
+  const headerNonBilled =
+    futureCountLocal > 0
+      ? `Séances non facturées (${nonFactCountLocal}) — à venir (${futureCountLocal})`
+      : `Séances non facturées (${nonFactCountLocal})`;
+
+  addSectionHeader(headerNonBilled);
+
+  const nonBilledAll = nonBilledPastToday.concat(futureNonBilled);
+
+  if (nonBilledAll.length === 0) {
+    addEmptyDash();
+  } else {
+    nonBilledAll.forEach(addSessionLi);
+  }
 }
+
 
 
     // --- OCR Doctolib ---
