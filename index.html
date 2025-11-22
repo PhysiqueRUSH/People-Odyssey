@@ -955,6 +955,44 @@ function isScheduledOnDate(p, dateStrFR){
 function isScheduledToday(p){
   return isScheduledOnDate(p, todayStr());
 }
+      // =========================
+// EXCEPTIONS DE PROGRAMMATION
+// (stockées dans p.repeat.exceptions)
+// =========================
+function hasRepeatException(p, dateStrFR){
+  const r = p.repeat;
+  return !!(r && Array.isArray(r.exceptions) && r.exceptions.includes(dateStrFR));
+}
+
+function addRepeatException(p, dateStrFR){
+  if(!p.repeat) return;
+  if(!Array.isArray(p.repeat.exceptions)) p.repeat.exceptions = [];
+  if(!p.repeat.exceptions.includes(dateStrFR)){
+    p.repeat.exceptions.push(dateStrFR);
+  }
+}
+
+function removeRepeatException(p, dateStrFR){
+  if(!p.repeat || !Array.isArray(p.repeat.exceptions)) return;
+  p.repeat.exceptions = p.repeat.exceptions.filter(d => d !== dateStrFR);
+}
+
+// =========================
+// HELPERS SÉANCE RÉELLE / PROGRAMMÉE
+// =========================
+function hasRealSessionOnDate(p, dateStr){
+  const hasPresence = Array.isArray(p.presences) && p.presences.includes(dateStr);
+  const hasBilan    = Array.isArray(p.bilans) && p.bilans.includes(dateStr);
+  return hasPresence || hasBilan;
+}
+
+// ✅ Une séance programmée ne compte comme "présence réelle"
+//     QUE si c'est aujourd'hui et qu'il n'y a pas déjà séance réelle.
+function isScheduledPresenceToday(p){
+  const t = todayStr();
+  return isScheduledOnDate(p, t) && !hasRealSessionOnDate(p, t);
+}
+
 
       // =========================
 // RENFO DU SOIR : marquage esthétique 🏋️
@@ -1149,13 +1187,13 @@ function renderPatients(filter = "") {
       li.appendChild(makeEmoji("🔄", "Séances programmées"));
     }
 
-    // ✅ Présence du jour : 🏋️ si renfo, sinon 🙋
-    if (isPresentToday(p)) {
-      if (!isProgrammed(p) || isScheduledToday(p)){
-        const emo = isRenfoToday(p) ? "🏋️" : "🙋";
-        const title = isRenfoToday(p) ? "Renfo du soir aujourd'hui" : "Présent aujourd'hui";
-        li.appendChild(makeEmoji(emo, title));
-      }
+    // ✅ Présence du jour = vraie présence OU séance programmée aujourd'hui
+    if (isPresentToday(p) || isScheduledPresenceToday(p)) {
+      const emo = isRenfoToday(p) ? "🏋️" : "🙋";
+      const title = isRenfoToday(p)
+        ? "Renfo du soir aujourd'hui"
+        : (isPresentToday(p) ? "Présent aujourd'hui" : "Présent aujourd'hui (programmé)");
+      li.appendChild(makeEmoji(emo, title));
     }
 
     const hasRejet = (p.rejetCount && p.rejetCount > 0) || (p.rejet && p.rejet.trim() !== "");
@@ -1192,7 +1230,13 @@ function renderPatients(filter = "") {
     const hasNonFact = nonFactCount(p) > 0;
     const billedNow = isBilledToday(k);
     const showStaticMoney = shouldShowStaticBilled(p);
-    const canShowBillingToday = !isProgrammed(p) || isScheduledToday(p);
+
+    // ✅ si patient programmé MAIS qu'il a séance réelle aujourd'hui,
+    //    on doit aussi permettre 💸 / 💰
+    const canShowBillingToday =
+      !isProgrammed(p) ||
+      isScheduledToday(p) ||
+      hasRealSessionOnDate(p, todayStr());
 
     if (billedNow) {
       const money = makeEmoji("💰", "Facturé aujourd'hui");
@@ -2521,7 +2565,7 @@ function showFactureList(filterMode) {
   const todayStrVal = formatDate(new Date());
   const last = p.lastFactureDate ? normalizeDate(p.lastFactureDate) : null;
 
-  // Construire la liste complète : présences + bilans
+  // Construire la liste complète : présences + bilans + (programmée aujourd'hui si pas déjà réelle)
   const sessions = [];
 
   (p.presences || []).forEach(d => {
@@ -2531,6 +2575,11 @@ function showFactureList(filterMode) {
   (p.bilans || []).forEach(d => {
     sessions.push({ date:d, type:"bilan" });
   });
+
+  // ✅ Ajout séance programmée d'AUJOURD'HUI uniquement
+  if (isScheduledOnDate(p, todayStrVal) && !hasRealSessionOnDate(p, todayStrVal)) {
+    sessions.push({ date: todayStrVal, type:"scheduled" });
+  }
 
   // Tri chronologique
   sessions.sort((a, b) => {
@@ -2567,11 +2616,12 @@ function showFactureList(filterMode) {
     return true;                        // toutes
   });
 
-  // Rendu avec la mention (Bilan)
+  // Rendu avec mentions
   filtered.forEach(s => {
     const li = document.createElement("li");
     let txt = s.date;
     if (s.type === "bilan") txt += " (Bilan)";
+    if (s.type === "scheduled") txt += " (Programmé)";
     li.textContent = txt;
 
     if (filterMode === undefined && compareDates(s.date, todayStrVal) > 0) {
@@ -3010,26 +3060,32 @@ function getMostRecentBilanDate(p){
       
 // Compte les séances non facturées (présences + bilans), en ignorant le futur
 function nonFactCount(p) {
-  const todayStr = formatDate(new Date());
+  const t = todayStr();
   const last = p.lastFactureDate ? normalizeDate(p.lastFactureDate) : null;
   let c = 0;
 
-  // Séances classiques
+  // 1) Séances classiques
   (p.presences || []).forEach(d => {
-    if (compareDates(d, todayStr) <= 0) {
+    if (compareDates(d, t) <= 0) {
       if (!last || compareDates(d, last) > 0) c++;
     }
   });
 
-  // Bilans
+  // 2) Bilans
   (p.bilans || []).forEach(d => {
-    if (compareDates(d, todayStr) <= 0) {
+    if (compareDates(d, t) <= 0) {
       if (!last || compareDates(d, last) > 0) c++;
     }
   });
+
+  // 3) ✅ Programmation du JOUR = séance non facturée si pas déjà réelle
+  if (isScheduledPresenceToday(p)) {
+    if (!last || compareDates(t, last) > 0) c++;
+  }
 
   return c;
 }
+
 
 
 // Met à jour la couleur + clignotement du bouton 📌
@@ -3087,6 +3143,7 @@ function renderSpecialList() {
     const deleteBtn = document.createElement("button");
     deleteBtn.innerHTML = "🗑️";
     deleteBtn.className = "delete-btn";
+    deleteBtn.deleteBtn;
     deleteBtn.onclick = (e) => {
       e.stopPropagation();
       deletePatient(i);
@@ -3104,13 +3161,13 @@ function renderSpecialList() {
       li.appendChild(makeEmoji("🔄", "Séances programmées"));
     }
 
-    // ✅ Présence du jour : 🏋️ si renfo, sinon 🙋
-    if (isPresentToday(p)) {
-      if (!isProgrammed(p) || isScheduledToday(p)){
-        const emo = isRenfoToday(p) ? "🏋️" : "🙋";
-        const title = isRenfoToday(p) ? "Renfo du soir aujourd'hui" : "Présent aujourd'hui";
-        li.appendChild(makeEmoji(emo, title));
-      }
+    // ✅ Présence du jour = vraie présence OU programmée aujourd'hui
+    if (isPresentToday(p) || isScheduledPresenceToday(p)) {
+      const emo = isRenfoToday(p) ? "🏋️" : "🙋";
+      const title = isRenfoToday(p)
+        ? "Renfo du soir aujourd'hui"
+        : (isPresentToday(p) ? "Présent aujourd'hui" : "Présent aujourd'hui (programmé)");
+      li.appendChild(makeEmoji(emo, title));
     }
 
     const hasRejet = (p.rejetCount && p.rejetCount > 0) || (p.rejet && p.rejet.trim() !== "");
