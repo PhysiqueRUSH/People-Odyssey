@@ -508,6 +508,42 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
   width:90%;
   max-width:420px;
 }
+/* Modal Répétition */
+#repeat-modal{
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+#repeat-modal .menu-box{
+  background:#112b55;
+  border-radius:8px;
+  padding:1rem;
+  width:90%;
+  max-width:520px;
+}
+.repeat-days{
+  display:grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap:.4rem .8rem;
+  font-size:1rem;
+}
+.repeat-row{
+  display:flex;
+  gap:.8rem;
+  align-items:center;
+  flex-wrap:wrap;
+}
+#repeat-actions button{
+  background:#1f3f7a;
+  border:none;
+  padding:.5rem 1rem;
+  border-radius:6px;
+  color:#fff;
+  cursor:pointer;
+}
    
    
 </style>
@@ -740,7 +776,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
 <div id="patient-menu">
   <div class="menu-box">
     <button onclick="showInfoScreen()">Informations/Ordonnances/⚠️</button>
-    <button onclick="addPresenceOffset(0)">Présent ce jour</button>
+    <button id="present-today-btn">Présent ce jour</button>
     <button onclick="addPresenceOffset(1)">Présent demain</button>
     <button onclick="showPresenceSelection()">Sélectionner les présences</button>
     <button onclick="addBilanMenu()">Ajouter Bilan</button>
@@ -753,6 +789,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     <button onclick="showRejetModal()">Rejet ⚠️</button>
     <button onclick="ordonnanceOK()">Ordonnance OK</button>
     <button onclick="showMergeModal()">Fusionner avec . . .</button>
+    <button onclick="showRepeatModal()">Répétition : Séance tous les ...</button>
   </div>
 </div>
 
@@ -849,6 +886,83 @@ function shouldShowStaticBilled(p){
 
   // afficher 💰 statique tant qu’aucune séance (présence ou bilan) n’a été ajoutée après lastFactureDate
   return nonFactCount(p) === 0;
+}
+
+      // =========================
+// RÉPÉTITIONS / PROGRAMMATION
+// =========================
+
+// vrai si patient a une programmation active
+function isProgrammed(p){
+  return !!(p.repeat && p.repeat.enabled && Array.isArray(p.repeat.days) && p.repeat.days.length>0);
+}
+
+function isoToDate(iso){
+  if(!iso) return null;
+  const [y,m,d]=iso.split("-").map(Number);
+  return new Date(y,m-1,d);
+}
+function dateToISO(d){
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,"0");
+  const da=String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${da}`;
+}
+function toMondayStart(date){
+  const d=new Date(date);
+  const day=(d.getDay()+6)%7; // lun=0 ... dim=6
+  d.setDate(d.getDate()-day);
+  d.setHours(0,0,0,0);
+  return d;
+}
+
+// Est-ce que ce patient est censé avoir séance à cette date ?
+function isScheduledOnDate(p, dateStrFR){
+  if(!isProgrammed(p)) return false;
+
+  const r = p.repeat;
+  const d = parseDateFR(dateStrFR);
+  d.setHours(0,0,0,0);
+
+  const start = isoToDate(r.startISO);
+  if(start){
+    start.setHours(0,0,0,0);
+    if(d < start) return false;
+  }
+
+  const end = isoToDate(r.endISO);
+  if(end){
+    end.setHours(0,0,0,0);
+    if(d > end) return false;
+  }
+
+  // jour de semaine
+  const dow = d.getDay(); // 0 dim ... 6 sam
+  if(!r.days.includes(dow)) return false;
+
+  // fréquence
+  if(r.freq === "BIWEEKLY" && start){
+    const w0 = toMondayStart(start).getTime();
+    const w1 = toMondayStart(d).getTime();
+    const diffWeeks = Math.round((w1 - w0) / (7*24*3600*1000));
+    if(diffWeeks % 2 !== 0) return false;
+  }
+
+  return true;
+}
+
+function isScheduledToday(p){
+  return isScheduledOnDate(p, todayStr());
+}
+
+      // =========================
+// RENFO DU SOIR : marquage esthétique 🏋️
+// =========================
+function isRenfoPresence(p, dateStr){
+  return Array.isArray(p.renfoPresences) && p.renfoPresences.includes(dateStr);
+}
+function isRenfoToday(p){
+  return isRenfoPresence(p, todayStr());
 }
 
       
@@ -992,22 +1106,18 @@ function renderPatients(filter = "") {
   const all = JSON.parse(localStorage.getItem("patients") || "[]");
   patientListEl.innerHTML = "";
 
-  // compteur global non filtré
   const countEl = document.getElementById("patientCount");
   if (countEl) countEl.textContent = `${all.length} patients`;
 
-  // Filtrage + index d'ajout
   let rows = all
     .map((p, i) => ({ p, i }))
     .filter(({ p }) => (p.nom + " " + p.prenom).toLowerCase().includes(filter.toLowerCase()));
 
-  // Tri
   rows = sortPatients(rows);
 
   rows.forEach(({ p, i }) => {
     const li = document.createElement("li");
 
-    // corbeille
     const deleteBtn = document.createElement("button");
     deleteBtn.innerHTML = "🗑️";
     deleteBtn.className = "delete-btn";
@@ -1016,14 +1126,22 @@ function renderPatients(filter = "") {
     const nameSpan = document.createElement("span");
     nameSpan.textContent = p.nom + " " + p.prenom;
 
-    // Présence du jour 🙋 juste après le nom si présent
     li.appendChild(deleteBtn);
     li.appendChild(nameSpan);
-    if (isPresentToday(p)) {
-      li.appendChild(makeEmoji("🙋", "Présent aujourd'hui"));
+
+    if (isProgrammed(p)){
+      li.appendChild(makeEmoji("🔄", "Séances programmées"));
     }
 
-    // ⚠️ cliquable → bulle 3s avec le motif
+    // ✅ Présence du jour : 🏋️ si renfo, sinon 🙋
+    if (isPresentToday(p)) {
+      if (!isProgrammed(p) || isScheduledToday(p)){
+        const emo = isRenfoToday(p) ? "🏋️" : "🙋";
+        const title = isRenfoToday(p) ? "Renfo du soir aujourd'hui" : "Présent aujourd'hui";
+        li.appendChild(makeEmoji(emo, title));
+      }
+    }
+
     const hasRejet = (p.rejetCount && p.rejetCount > 0) || (p.rejet && p.rejet.trim() !== "");
     if (hasRejet) {
       const txt = p.rejet && p.rejet.trim()
@@ -1035,7 +1153,6 @@ function renderPatients(filter = "") {
       }));
     }
 
-    // ❓ Ordonnance non scannée → bulle 2s
     if (p.ordNonScan) {
       li.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e,self)=>{
         const info = (p.ordDetails||"").trim();
@@ -1044,19 +1161,14 @@ function renderPatients(filter = "") {
       }));
     }
 
-    // 📑 Ordonnance à renouveler
-    if (p.ordRenouv) {
-      li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
-    }
+    if (p.ordRenouv) li.appendChild(makeEmoji("📑", "Ordonnance à renouveler"));
 
-    // 💬 Notes → bulle 4s avec le contenu
     if (p.notes && p.notes.trim() !== "") {
       li.appendChild(makeEmoji("💬", "Notes", ()=>{
         showTip(li, (p.notes||"").trim(), 4000);
       }));
     }
 
-    // bord droit : 💸 / 💰 (facturation rapide)
     const right = document.createElement("span");
     right.className = "right-edge";
 
@@ -1064,15 +1176,14 @@ function renderPatients(filter = "") {
     const hasNonFact = nonFactCount(p) > 0;
     const billedNow = isBilledToday(k);
     const showStaticMoney = shouldShowStaticBilled(p);
+    const canShowBillingToday = !isProgrammed(p) || isScheduledToday(p);
 
-    // Cas 1 : facturé aujourd'hui => 💰 avec lueur dorée clignotante
     if (billedNow) {
       const money = makeEmoji("💰", "Facturé aujourd'hui");
-      money.classList.add("money-today"); // <-- lueur + blink
+      money.classList.add("money-today");
       right.appendChild(money);
 
-    // Cas 2 : séances non facturées => 💸 cliquable
-    } else if (hasNonFact) {
+    } else if (hasNonFact && canShowBillingToday) {
       const billEmoji = makeEmoji("💸", "Facturer jusqu'à aujourd'hui", ()=>{
         const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
         if(!ok) return;
@@ -1081,14 +1192,12 @@ function renderPatients(filter = "") {
         const q = patients[i];
         if (!q) return;
 
-        // nb de séances qu’on facture maintenant
         const countToBill = nonFactCount(q);
 
         q.lastFactureDate = todayStr();
         patients[i] = q;
         localStorage.setItem("patients", JSON.stringify(patients));
 
-        // mémorise pour le total du jour (💰)
         setBilledToday(k, todayStr(), countToBill);
         addBillingToJournal(todayStr(), countToBill);
 
@@ -1099,7 +1208,6 @@ function renderPatients(filter = "") {
       });
       right.appendChild(billEmoji);
 
-    // Cas 3 : facturé les jours précédents et aucune séance depuis => 💰 statique
     } else if (showStaticMoney) {
       const moneyStatic = makeEmoji("💰", "Dernière facturation effectuée (aucune séance depuis)");
       right.appendChild(moneyStatic);
@@ -1107,7 +1215,6 @@ function renderPatients(filter = "") {
 
     li.appendChild(right);
 
-    // clic ligne → menu patient
     li.onclick = () => {
       menuFromSpecial = false;
       showPatientMenu(i);
@@ -1116,9 +1223,10 @@ function renderPatients(filter = "") {
     patientListEl.appendChild(li);
   });
 
-  // Met à jour la ligne des totaux
   updateMainTotals();
 }
+
+
 
    function savePatient() {
   const nom = document.getElementById("nom").value.trim();
@@ -1139,6 +1247,9 @@ function renderPatients(filter = "") {
     ordRenouv:false,
     ordDetails:"",
     bilans:[],
+    
+    // ✅ Renfo du soir (tags esthétiques)
+  renfoPresences: [],
 
     // Rejet structuré
     rejetCount: 0,
@@ -1333,20 +1444,34 @@ function backFromPatientSessions(){
   }
 }
       
-          // --- Menu patient ---
+// --- Menu patient ---
 function showPatientMenu(index) {
   selectedPatientIndex = index;
 
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+
+  // ✅ Bouton Présent/Absent ce jour
+  const presentBtn = document.getElementById("present-today-btn");
+  if (presentBtn && p){
+    if (isPresentToday(p)){
+      presentBtn.textContent = "Absent ce jour";
+      presentBtn.onclick = () => removePresenceToday();
+    } else {
+      presentBtn.textContent = "Présent ce jour";
+      presentBtn.onclick = () => addPresenceOffset(0);
+    }
+  }
+
+  // ✅ Bouton spécial liste (inchangé)
   const btn = document.getElementById("special-toggle-btn");
   if (btn) {
     if (menuFromSpecial) {
-      // Mode "liste spéciale" : bouton = supprimer de la liste spéciale
       btn.textContent = "Supprimer de la liste spéciale";
       btn.onclick = function () {
         removeFromSpecialList();
       };
     } else {
-      // Mode liste principale (ou autre) : ajouter à la liste spéciale
       btn.textContent = "Ajouter à la liste spéciale";
       btn.onclick = function () {
         addToSpecialList();
@@ -1696,6 +1821,31 @@ function addPresenceOffset(offset) {
   updateMainTotals();
 }
 
+// Supprimer la présence d'aujourd'hui (option "Absent ce jour")
+function removePresenceToday(){
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  if(!p) return;
+
+  const t = todayStr();
+  p.presences = (p.presences || []).filter(d => d !== t);
+
+  patients[selectedPatientIndex]=p;
+  localStorage.setItem("patients", JSON.stringify(patients));
+
+  patientMenu.style.display="none";
+
+  // refresh écran courant
+  const specialVisible = document.getElementById("special-screen").style.display === "block";
+  if (specialVisible) renderSpecialList();
+  else renderPatients(searchInput.value);
+
+  updatePinButton();
+  updateMainTotals();
+  safeRefreshCalendar();
+}
+      
+
   function addBilanForDate(dateStr){
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const p = patients[selectedPatientIndex];
@@ -1996,31 +2146,49 @@ function sortPatientsByMode(rows, mode) {
 
     if (type === "presence") {
       // supprimer la présence du jour
-      delBtn.onclick = (e) => {
-        e.stopPropagation();
-        const ok = confirm(`Retirer ${p.nom} ${p.prenom} des présents du ${dateStr} ?`);
-        if(!ok) return;
-        p.presences = (p.presences||[]).filter(d => d !== dateStr);
-        patients[i] = p;
-        localStorage.setItem("patients", JSON.stringify(patients));
-        renderDayPatients(dateStr);
-        updateDayTitle(dateStr);
-        updateMainTotals();
-        safeRefreshCalendar();
-      };
+delBtn.onclick = (e) => {
+  e.stopPropagation();
+  const ok = confirm(`Retirer ${p.nom} ${p.prenom} des présents du ${dateStr} ?`);
+  if(!ok) return;
+
+  p.presences = (p.presences||[]).filter(d => d !== dateStr);
+
+  // ✅ enlever aussi le tag renfo si présent
+  if (Array.isArray(p.renfoPresences)){
+    p.renfoPresences = p.renfoPresences.filter(d => d !== dateStr);
+  }
+
+  patients[i] = p;
+  localStorage.setItem("patients", JSON.stringify(patients));
+  renderDayPatients(dateStr);
+  updateDayTitle(dateStr);
+  updateMainTotals();
+  safeRefreshCalendar();
+};
 
       // flèche ➡️ pour décaler au lendemain (seulement pour les séances)
-      const move = makeEmoji("➡️", "Reporter au lendemain", ()=>{
-        const tomorrow = addDaysFR(dateStr, 1);
-        p.presences = (p.presences || []).filter(d => d !== dateStr);
-        if(!p.presences.includes(tomorrow)) p.presences.push(tomorrow);
-        patients[i] = p;
-        localStorage.setItem("patients", JSON.stringify(patients));
-        renderDayPatients(dateStr);
-        updateDayTitle(dateStr);
-        updateMainTotals();
-        safeRefreshCalendar();
-      });
+  const move = makeEmoji("➡️", "Reporter au lendemain", ()=>{
+  const tomorrow = addDaysFR(dateStr, 1);
+
+  const wasRenfo = Array.isArray(p.renfoPresences) && p.renfoPresences.includes(dateStr);
+
+  p.presences = (p.presences || []).filter(d => d !== dateStr);
+  if(!p.presences.includes(tomorrow)) p.presences.push(tomorrow);
+
+  if (wasRenfo){
+    if (!Array.isArray(p.renfoPresences)) p.renfoPresences = [];
+    p.renfoPresences = p.renfoPresences.filter(d => d !== dateStr);
+    if (!p.renfoPresences.includes(tomorrow)) p.renfoPresences.push(tomorrow);
+  }
+
+  patients[i] = p;
+  localStorage.setItem("patients", JSON.stringify(patients));
+  renderDayPatients(dateStr);
+  updateDayTitle(dateStr);
+  updateMainTotals();
+  safeRefreshCalendar();
+});
+
       right.appendChild(move);
 
     } else {
@@ -2617,6 +2785,9 @@ document.getElementById("ocr-import-confirm").addEventListener("click", () => {
         lastFactureDate: null,
         bilans:[],
 
+          // ✅ Renfo du soir (tags esthétiques)
+  renfoPresences: [],
+
         rejetCount: 0,
         rejetMutuelle: false,
         rejetSecu: false,
@@ -2838,17 +3009,29 @@ function renderSpecialList() {
     li.appendChild(deleteBtn);
     li.appendChild(nameSpan);
 
-    if (isPresentToday(p)) li.appendChild(makeEmoji("🙋","Présent aujourd'hui"));
-    const hasRejet = (p.rejetCount && p.rejetCount > 0) || (p.rejet && p.rejet.trim() !== "");
-if (hasRejet) {
-  const txt = p.rejet && p.rejet.trim()
-    ? p.rejet.trim()
-    : makeRejetText(p.rejetCount||0, p.rejetMutuelle, p.rejetSecu);
+    if (isProgrammed(p)){
+      li.appendChild(makeEmoji("🔄", "Séances programmées"));
+    }
 
-  li.appendChild(makeEmoji("⚠️", "Rejet de paiement", () => {
-    showTip(li, `Rejet: ${txt}`, 3000);
-  }));
-}
+    // ✅ Présence du jour : 🏋️ si renfo, sinon 🙋
+    if (isPresentToday(p)) {
+      if (!isProgrammed(p) || isScheduledToday(p)){
+        const emo = isRenfoToday(p) ? "🏋️" : "🙋";
+        const title = isRenfoToday(p) ? "Renfo du soir aujourd'hui" : "Présent aujourd'hui";
+        li.appendChild(makeEmoji(emo, title));
+      }
+    }
+
+    const hasRejet = (p.rejetCount && p.rejetCount > 0) || (p.rejet && p.rejet.trim() !== "");
+    if (hasRejet) {
+      const txt = p.rejet && p.rejet.trim()
+        ? p.rejet.trim()
+        : makeRejetText(p.rejetCount||0, p.rejetMutuelle, p.rejetSecu);
+
+      li.appendChild(makeEmoji("⚠️", "Rejet de paiement", () => {
+        showTip(li, `Rejet: ${txt}`, 3000);
+      }));
+    }
 
     if (p.ordNonScan) {
       li.appendChild(makeEmoji("❓", "Ordonnance non scannée", (_e,self)=>{
@@ -2859,12 +3042,11 @@ if (hasRejet) {
     }
     if (p.ordRenouv) li.appendChild(makeEmoji("📑","Ordonnance à renouveler"));
 
-li.onclick = () => {
-  menuFromSpecial = true;
-  showPatientMenu(i);
-};
-listEl.appendChild(li);
-
+    li.onclick = () => {
+      menuFromSpecial = true;
+      showPatientMenu(i);
+    };
+    listEl.appendChild(li);
   });
 
   const total = rows.reduce((s, {p}) => s + nonFactCount(p), 0);
@@ -2875,14 +3057,17 @@ listEl.appendChild(li);
 
 // ====== RENFO DU SOIR ======
 // Ajoute 2 présences : (1) aujourd'hui, (2) jour ouvré de la semaine le moins chargé.
-// Si le patient est déjà présent ces jours, on choisit d'autres jours ouvrés les moins chargés.
+// Tague ces présences comme "renfo" pour afficher 🏋️ au lieu de 🙋 le jour J.
 function renfoDuSoir() {
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const p = patients[selectedPatientIndex];
   if (!p) return;
 
+  if (!Array.isArray(p.presences)) p.presences = [];
+  if (!Array.isArray(p.renfoPresences)) p.renfoPresences = []; // ✅ nouveau
+
   const today = new Date();
-  const todayStr = formatDate(today);
+  const todayStrVal = formatDate(today);
 
   // Lundi de la semaine courante
   const day = today.getDay(); // 0=Dim,1=Lun,...6=Sam
@@ -2906,30 +3091,43 @@ function renfoDuSoir() {
   const toAdd = [];
 
   // (1) Aujourd'hui si pas déjà présent
-  if (!p.presences.includes(todayStr)) toAdd.push(todayStr);
+  if (!p.presences.includes(todayStrVal)) toAdd.push(todayStrVal);
+  else toAdd.push(todayStrVal); // même s'il est déjà présent, on tague renfo esthétique
 
   // (2) le jour ouvré le moins chargé, en évitant doublons
   for (const w of ranked) {
     if (toAdd.length >= 2) break;
-    if (!p.presences.includes(w.s) && !toAdd.includes(w.s)) toAdd.push(w.s);
+    if (!toAdd.includes(w.s)) toAdd.push(w.s);
   }
 
   // Si on n'a pas 2 dates (cas limites), prendre les suivants dispo
   if (toAdd.length < 2) {
     for (const w of ranked) {
       if (toAdd.length >= 2) break;
-      if (!toAdd.includes(w.s) && !p.presences.includes(w.s)) toAdd.push(w.s);
+      if (!toAdd.includes(w.s)) toAdd.push(w.s);
     }
   }
 
-  toAdd.forEach(d => { if (!p.presences.includes(d)) p.presences.push(d); });
+  // Ajout + tag renfo
+  toAdd.forEach(d => {
+    if (!p.presences.includes(d)) p.presences.push(d);
+    if (!p.renfoPresences.includes(d)) p.renfoPresences.push(d); // ✅ tag
+  });
 
+  patients[selectedPatientIndex] = p;
   localStorage.setItem("patients", JSON.stringify(patients));
   patientMenu.style.display = "none";
 
-  renderPatients(document.getElementById("searchInput").value);
+  // ✅ Rafraîchir l'écran visible (main OU liste spéciale)
+  const specialVisible = document.getElementById("special-screen").style.display === "block";
+  if (specialVisible) renderSpecialList();
+  else renderPatients(document.getElementById("searchInput").value);
+
   updatePinButton();
+  updateMainTotals();
+  safeRefreshCalendar();
 }
+
 
 // ====== OCR Doctolib sur l'écran Ajout patient (ajoute des fiches patients, PAS de présences) ======
 async function processAddOcrFiles() {
@@ -3054,7 +3252,10 @@ function importAddOcrSelection() {
         presences:[],
         lastFactureDate:null,
         bilans:[],
-
+        
+  // ✅ Renfo du soir (tags esthétiques)
+  renfoPresences: [],
+        
         rejetCount: 0,
         rejetMutuelle: false,
         rejetSecu: false,
@@ -3135,6 +3336,111 @@ function safeRefreshCalendar(){
 
  let __mergeChosenKey = null; // keyName du patient coché
 
+// ===== Modal Répétition =====
+function showRepeatModal(){
+  patientMenu.style.display = "none";
+  const modal = document.getElementById("repeat-modal");
+  if(!modal) return;
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  if(!p) return;
+
+  // reset erreurs
+  const err = document.getElementById("repeat-error");
+  if(err) err.style.display="none";
+
+  // pré-cocher les jours existants
+  const dayCbs = modal.querySelectorAll(".repeat-day");
+  dayCbs.forEach(cb => cb.checked = false);
+
+  if(p.repeat && p.repeat.enabled){
+    (p.repeat.days||[]).forEach(dow=>{
+      const cb = modal.querySelector(`.repeat-day[value="${dow}"]`);
+      if(cb) cb.checked = true;
+    });
+
+    // fréquence
+    const freq = p.repeat.freq || "WEEKLY";
+    const freqRadio = modal.querySelector(`input[name="repeat-freq"][value="${freq}"]`);
+    if(freqRadio) freqRadio.checked = true;
+
+    // dates
+    document.getElementById("repeat-start").value = p.repeat.startISO || dateToISO(new Date());
+    document.getElementById("repeat-end").value   = p.repeat.endISO || "";
+  } else {
+    // défauts
+    document.getElementById("repeat-start").value = dateToISO(new Date());
+    document.getElementById("repeat-end").value   = "";
+    const weekly = modal.querySelector(`input[name="repeat-freq"][value="WEEKLY"]`);
+    if(weekly) weekly.checked = true;
+  }
+
+  modal.style.display="flex";
+}
+
+function closeRepeatModal(){
+  const modal = document.getElementById("repeat-modal");
+  if(modal) modal.style.display="none";
+}
+
+function saveRepeatModal(){
+  const modal = document.getElementById("repeat-modal");
+  const days = Array.from(modal.querySelectorAll(".repeat-day:checked"))
+                    .map(cb => parseInt(cb.value,10));
+
+  const freqRadio = modal.querySelector('input[name="repeat-freq"]:checked');
+  const freq = freqRadio ? freqRadio.value : null;
+
+  const startISO = document.getElementById("repeat-start").value || dateToISO(new Date());
+  const endISO   = document.getElementById("repeat-end").value || "";
+
+  const err = document.getElementById("repeat-error");
+  if(days.length===0 || !freq){
+    if(err) err.style.display="block";
+    return;
+  }
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  if(!p) return;
+
+  p.repeat = {
+    enabled:true,
+    days,
+    freq,       // "WEEKLY" ou "BIWEEKLY"
+    startISO,
+    endISO
+  };
+
+  patients[selectedPatientIndex]=p;
+  localStorage.setItem("patients", JSON.stringify(patients));
+
+  closeRepeatModal();
+  renderPatients(searchInput.value);
+  updatePinButton();
+  updateMainTotals();
+  safeRefreshCalendar();
+}
+
+function clearRepeatModal(){
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex];
+  if(!p) return;
+
+  delete p.repeat;
+
+  patients[selectedPatientIndex]=p;
+  localStorage.setItem("patients", JSON.stringify(patients));
+
+  closeRepeatModal();
+  renderPatients(searchInput.value);
+  updatePinButton();
+  updateMainTotals();
+  safeRefreshCalendar();
+}
+
+      
 function showMergeModal(){
   // liste tous les autres patients sauf le sélectionné
   const modal = document.getElementById("merge-modal");
@@ -3458,6 +3764,63 @@ updatePinButton();  // colore/clignote le 📌 dès le départ
   </div>
 </div>
 
+<!-- Modal Répétition -->
+<div id="repeat-modal" style="display:none;">
+  <div class="menu-box">
+    <h3>Répétition des séances</h3>
 
+    <p style="margin:.4rem 0 .6rem 0;">Quels jours ? (choix multiple)</p>
+    <div class="repeat-days">
+      <label><input type="checkbox" class="repeat-day" value="1"> Lun</label>
+      <label><input type="checkbox" class="repeat-day" value="2"> Mar</label>
+      <label><input type="checkbox" class="repeat-day" value="3"> Mer</label>
+      <label><input type="checkbox" class="repeat-day" value="4"> Jeu</label>
+      <label><input type="checkbox" class="repeat-day" value="5"> Ven</label>
+      <label><input type="checkbox" class="repeat-day" value="6"> Sam</label>
+      <label><input type="checkbox" class="repeat-day" value="0"> Dim</label>
+    </div>
+
+    <hr style="opacity:.2;margin:.8rem 0;">
+
+    <p style="margin:.4rem 0 .6rem 0;">Fréquence (choix unique)</p>
+    <div class="repeat-row">
+      <label style="display:flex;gap:.4rem;align-items:center;">
+        <input type="radio" name="repeat-freq" value="WEEKLY">
+        Chaque semaine
+      </label>
+      <label style="display:flex;gap:.4rem;align-items:center;">
+        <input type="radio" name="repeat-freq" value="BIWEEKLY">
+        Une semaine sur deux
+      </label>
+    </div>
+
+    <hr style="opacity:.2;margin:.8rem 0;">
+
+    <div class="repeat-row">
+      <label style="flex:1;">
+        Début :
+        <input type="date" id="repeat-start" style="width:100%;margin-top:.3rem;padding:.5rem;border:none;border-radius:6px;">
+      </label>
+
+      <label style="flex:1;">
+        Fin :
+        <input type="date" id="repeat-end" style="width:100%;margin-top:.3rem;padding:.5rem;border:none;border-radius:6px;">
+        <div style="font-size:.8rem;opacity:.8;margin-top:.2rem;">(vide = jamais)</div>
+      </label>
+    </div>
+
+    <div id="repeat-error" style="display:none;color:#ffb3b3;font-size:.9rem;margin-top:.4rem;">
+      ⚠️ Choisis au moins un jour + une fréquence.
+    </div>
+
+    <div id="repeat-actions" style="display:flex;gap:.5rem;margin-top:.8rem;">
+      <button onclick="saveRepeatModal()" style="flex:1;">Valider</button>
+      <button onclick="closeRepeatModal()" style="flex:1;">Annuler</button>
+      <button onclick="clearRepeatModal()" style="margin-left:auto;">Déprogrammer</button>
+    </div>
+  </div>
+</div>
+
+  
 </body>
 </html>
