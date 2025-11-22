@@ -947,7 +947,8 @@ function isScheduledOnDate(p, dateStrFR){
     const diffWeeks = Math.round((w1 - w0) / (7*24*3600*1000));
     if(diffWeeks % 2 !== 0) return false;
   }
-
+  // ✅ Absence exceptionnelle prioritaire
+  if (Array.isArray(r.exceptions) && r.exceptions.includes(dateStrFR)) return false;
   return true;
 }
 
@@ -2059,30 +2060,58 @@ function renderPresenceCalendar() {
       dayEl.classList.add("selected");
     }
 
-    dayEl.onclick = () => {
-      if (bilanAddMode){
-        addBilanForDate(dateStr);
-        bilanAddMode = false;
-        showMainScreen();
-        return;
-      }
+dayEl.onclick = () => {
+  if (bilanAddMode){
+    addBilanForDate(dateStr);
+    bilanAddMode = false;
+    showMainScreen();
+    return;
+  }
 
-      // mode normal : toggle présence MANUELLE
-      if (presenceSelection.has(dateStr)) {
-        presenceSelection.delete(dateStr);
+  const patientsAll = JSON.parse(localStorage.getItem("patients") || "[]");
+  const curr = patientsAll[selectedPatientIndex];
+  if (!curr) return;
 
-        // si c’était une séance programmée, on la laisse visible (bleu)
-        if (isScheduledFuture){
-          dayEl.classList.add("selected");
-        } else {
-          dayEl.classList.remove("selected");
-        }
+  // ✅ Si c'est une séance programmée (aujourd’hui / futur) → 1 clic = absence exceptionnelle
+  const isFutureOrToday = compareDates(dateStr, todayStr()) >= 0;
+  const scheduledHere = isFutureOrToday && isScheduledOnDate(curr, dateStr);
 
-      } else {
-        presenceSelection.add(dateStr);
-        dayEl.classList.add("selected");
-      }
-    };
+  if (scheduledHere && !presenceSelection.has(dateStr)) {
+    addRepeatException(curr, dateStr); // annule la programmation ce jour-là (pas de toggle)
+    patientsAll[selectedPatientIndex] = curr;
+    localStorage.setItem("patients", JSON.stringify(patientsAll));
+
+    renderPresenceCalendar();
+    safeRefreshCalendar();
+    renderPatients(searchInput.value);
+    return;
+  }
+
+  // ✅ Sinon on reste sur le toggle de présence MANUELLE
+  if (presenceSelection.has(dateStr)) {
+    presenceSelection.delete(dateStr);
+
+    // si on enlève une présence manuelle sur un jour "pattern",
+    // la programmation redevient visible sauf exception
+    if (isScheduledOnDate(curr, dateStr) && compareDates(dateStr, todayStr()) >= 0){
+      dayEl.classList.add("selected");
+    } else {
+      dayEl.classList.remove("selected");
+    }
+
+  } else {
+    presenceSelection.add(dateStr);
+    dayEl.classList.add("selected");
+
+    // ✅ si on ajoute une vraie séance manuelle sur un jour annulé, on enlève l’exception
+    if (hasRepeatException(curr, dateStr)){
+      removeRepeatException(curr, dateStr);
+      patientsAll[selectedPatientIndex] = curr;
+      localStorage.setItem("patients", JSON.stringify(patientsAll));
+    }
+  }
+};
+
 
     gridEl.appendChild(dayEl);
   }
@@ -2132,7 +2161,7 @@ function sortPatientsByMode(rows, mode) {
 }
 
       
- function renderDayPatients(dateStr) {
+function renderDayPatients(dateStr) {
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const q = (document.getElementById("daySearchInput")?.value || "").toLowerCase();
 
@@ -2142,15 +2171,24 @@ function sortPatientsByMode(rows, mode) {
     const fullName = (p.nom + " " + p.prenom).toLowerCase();
     if (q && !fullName.includes(q)) return;
 
-    // séance classique ce jour
-    if (p.presences && p.presences.includes(dateStr)) {
+    // 1) séance classique ce jour
+    const hasRealPresence = (p.presences || []).includes(dateStr);
+    if (hasRealPresence) {
       rows.push({ p, i, type: "presence" });
     }
 
-    // bilan(s) ce jour
+    // 2) bilan(s) ce jour
     const nbBilans = (p.bilans || []).filter(d => d === dateStr).length;
     for (let k = 0; k < nbBilans; k++) {
       rows.push({ p, i, type: "bilan" });
+    }
+
+    // 3) ✅ séance programmée (aujourd'hui/futur) si aucune séance réelle ce jour-là
+    const hasBilan = nbBilans > 0;
+    const isFutureOrToday = compareDates(dateStr, todayStr()) >= 0;
+
+    if (!hasRealPresence && !hasBilan && isFutureOrToday && isScheduledOnDate(p, dateStr)) {
+      rows.push({ p, i, type: "scheduled" });
     }
   });
 
@@ -2165,7 +2203,7 @@ function sortPatientsByMode(rows, mode) {
 
   dayPatientList.innerHTML = "";
 
-  rows.forEach(({p, i, type}) => {
+  rows.forEach(({ p, i, type }) => {
     const li = document.createElement("li");
 
     const delBtn = document.createElement("button");
@@ -2173,59 +2211,76 @@ function sortPatientsByMode(rows, mode) {
     delBtn.className = "delete-btn";
 
     const span = document.createElement("span");
-    span.textContent = (type === "bilan")
-      ? `${p.nom} ${p.prenom} (Bilan)`
-      : `${p.nom} ${p.prenom}`;
+    span.textContent =
+      type === "bilan"     ? `${p.nom} ${p.prenom} (Bilan)` :
+      type === "scheduled" ? `${p.nom} ${p.prenom} (Programmé)` :
+                             `${p.nom} ${p.prenom}`;
 
     const right = document.createElement("span");
     right.className = "right-edge";
 
     if (type === "presence") {
       // supprimer la présence du jour
-delBtn.onclick = (e) => {
-  e.stopPropagation();
-  const ok = confirm(`Retirer ${p.nom} ${p.prenom} des présents du ${dateStr} ?`);
-  if(!ok) return;
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        const ok = confirm(`Retirer ${p.nom} ${p.prenom} des présents du ${dateStr} ?`);
+        if (!ok) return;
 
-  p.presences = (p.presences||[]).filter(d => d !== dateStr);
+        p.presences = (p.presences || []).filter(d => d !== dateStr);
 
-  // ✅ enlever aussi le tag renfo si présent
-  if (Array.isArray(p.renfoPresences)){
-    p.renfoPresences = p.renfoPresences.filter(d => d !== dateStr);
-  }
+        // ✅ enlever aussi le tag renfo si présent
+        if (Array.isArray(p.renfoPresences)) {
+          p.renfoPresences = p.renfoPresences.filter(d => d !== dateStr);
+        }
 
-  patients[i] = p;
-  localStorage.setItem("patients", JSON.stringify(patients));
-  renderDayPatients(dateStr);
-  updateDayTitle(dateStr);
-  updateMainTotals();
-  safeRefreshCalendar();
-};
+        patients[i] = p;
+        localStorage.setItem("patients", JSON.stringify(patients));
+        renderDayPatients(dateStr);
+        updateDayTitle(dateStr);
+        updateMainTotals();
+        safeRefreshCalendar();
+      };
 
       // flèche ➡️ pour décaler au lendemain (seulement pour les séances)
-  const move = makeEmoji("➡️", "Reporter au lendemain", ()=>{
-  const tomorrow = addDaysFR(dateStr, 1);
+      const move = makeEmoji("➡️", "Reporter au lendemain", () => {
+        const tomorrow = addDaysFR(dateStr, 1);
 
-  const wasRenfo = Array.isArray(p.renfoPresences) && p.renfoPresences.includes(dateStr);
+        const wasRenfo = Array.isArray(p.renfoPresences) && p.renfoPresences.includes(dateStr);
 
-  p.presences = (p.presences || []).filter(d => d !== dateStr);
-  if(!p.presences.includes(tomorrow)) p.presences.push(tomorrow);
+        p.presences = (p.presences || []).filter(d => d !== dateStr);
+        if (!p.presences.includes(tomorrow)) p.presences.push(tomorrow);
 
-  if (wasRenfo){
-    if (!Array.isArray(p.renfoPresences)) p.renfoPresences = [];
-    p.renfoPresences = p.renfoPresences.filter(d => d !== dateStr);
-    if (!p.renfoPresences.includes(tomorrow)) p.renfoPresences.push(tomorrow);
-  }
+        if (wasRenfo) {
+          if (!Array.isArray(p.renfoPresences)) p.renfoPresences = [];
+          p.renfoPresences = p.renfoPresences.filter(d => d !== dateStr);
+          if (!p.renfoPresences.includes(tomorrow)) p.renfoPresences.push(tomorrow);
+        }
 
-  patients[i] = p;
-  localStorage.setItem("patients", JSON.stringify(patients));
-  renderDayPatients(dateStr);
-  updateDayTitle(dateStr);
-  updateMainTotals();
-  safeRefreshCalendar();
-});
+        patients[i] = p;
+        localStorage.setItem("patients", JSON.stringify(patients));
+        renderDayPatients(dateStr);
+        updateDayTitle(dateStr);
+        updateMainTotals();
+        safeRefreshCalendar();
+      });
 
       right.appendChild(move);
+
+    } else if (type === "scheduled") {
+      // ✅ 1 clic corbeille = absence exceptionnelle prioritaire (sans confirm)
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+
+        addRepeatException(p, dateStr);  // annule la programmation ce jour-là
+        patients[i] = p;
+        localStorage.setItem("patients", JSON.stringify(patients));
+
+        renderDayPatients(dateStr);
+        updateDayTitle(dateStr);
+        updateMainTotals();
+        safeRefreshCalendar();
+        renderPatients(searchInput.value);
+      };
 
     } else {
       // type === "bilan" : suppression uniquement du bilan
@@ -2244,7 +2299,6 @@ delBtn.onclick = (e) => {
         updateMainTotals();
         safeRefreshCalendar();
       };
-      // pas de flèche ➡️ pour les bilans
     }
 
     li.appendChild(delBtn);
@@ -2259,6 +2313,7 @@ delBtn.onclick = (e) => {
     inp.__bound = true;
   }
 }
+
 
 
     // --- Facturation ---
