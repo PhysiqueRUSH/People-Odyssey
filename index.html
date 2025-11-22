@@ -1048,22 +1048,37 @@ function showTip(li, text, ms = 2000){
       todayDateEl.textContent = today.toLocaleDateString("fr-FR", options);
     }
 
-// Compter le nombre total de séances (présences + bilans) pour une date
+// Compter le nombre total de séances (présences + bilans + programmations futures) pour une date
 function countPresences(dateStr) {
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   let count = 0;
 
-  patients.forEach(p => {
-    // une séance classique ce jour
-    if (p.presences && p.presences.includes(dateStr)) count++;
+  const t = todayStr(); // "dd/mm/yyyy"
 
-    // + 1 par bilan ce jour
+  patients.forEach(p => {
+    let cPatient = 0;
+
+    // 1) Séance classique ce jour
+    if (p.presences && p.presences.includes(dateStr)) cPatient++;
+
+    // 2) + 1 par bilan ce jour
     const nbBilans = (p.bilans || []).filter(d => d === dateStr).length;
-    count += nbBilans;
+    cPatient += nbBilans;
+
+    // 3) Séance programmée future visible dans le calendrier
+    // => on compte 1 séance "planifiée" seulement si aucune séance réelle ce jour-là
+    // => seulement aujourd’hui et futur
+    const isFutureOrToday = compareDates(dateStr, t) >= 0;
+    if (cPatient === 0 && isFutureOrToday && isScheduledOnDate(p, dateStr)) {
+      cPatient++;
+    }
+
+    count += cPatient;
   });
 
   return count;
 }
+
 
          
    // ====== Tri des patients (écran principal) ======
@@ -2000,10 +2015,13 @@ function renderCalendar() {
       renderCalendar();
     }
 
-    // --- Calendrier présences (multi sélection) ---
+// --- Calendrier présences (multi sélection + affichage des programmations futures) ---
 function renderPresenceCalendar() {
   const titleEl = document.getElementById("presence-title");
   const gridEl = document.getElementById("presence-grid");
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const p = patients[selectedPatientIndex] || null;  // patient courant
 
   const firstDay = new Date(presenceYear, presenceMonth, 1);
   const lastDay = new Date(presenceYear, presenceMonth + 1, 0);
@@ -2025,27 +2043,41 @@ function renderPresenceCalendar() {
   for (let d = 1; d <= lastDay.getDate(); d++) {
     const date = new Date(presenceYear, presenceMonth, d);
     const dateStr = formatDate(date);
+
     const dayEl = document.createElement("div");
     dayEl.className = "calendar-day";
     dayEl.textContent = d;
 
-    if (!bilanAddMode && presenceSelection.has(dateStr)) {
+    // ✅ Séance programmée future visible comme une présence sélectionnée
+    const isScheduledFuture =
+      !bilanAddMode &&
+      p &&
+      isScheduledOnDate(p, dateStr) &&
+      compareDates(dateStr, todayStr()) >= 0; // aujourd'hui/futur uniquement
+
+    if (!bilanAddMode && (presenceSelection.has(dateStr) || isScheduledFuture)) {
       dayEl.classList.add("selected");
     }
 
     dayEl.onclick = () => {
       if (bilanAddMode){
-        // clic = choisir la date du bilan
         addBilanForDate(dateStr);
         bilanAddMode = false;
         showMainScreen();
         return;
       }
 
-      // mode normal : toggle présence
+      // mode normal : toggle présence MANUELLE
       if (presenceSelection.has(dateStr)) {
         presenceSelection.delete(dateStr);
-        dayEl.classList.remove("selected");
+
+        // si c’était une séance programmée, on la laisse visible (bleu)
+        if (isScheduledFuture){
+          dayEl.classList.add("selected");
+        } else {
+          dayEl.classList.remove("selected");
+        }
+
       } else {
         presenceSelection.add(dateStr);
         dayEl.classList.add("selected");
@@ -2055,6 +2087,7 @@ function renderPresenceCalendar() {
     gridEl.appendChild(dayEl);
   }
 }
+
 
     function prevPresenceMonth(){
       presenceMonth--;
