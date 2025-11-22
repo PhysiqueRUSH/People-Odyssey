@@ -1776,6 +1776,9 @@ if(!p.ordNonScan) p.ordDetails = (p.ordDetails||""); // on conserve ce que tu as
     if (ok) {
       // Fusionne les présences et conserve p (celui qu'on édite)
       p.presences = mergeUniqueDates(p.presences, q.presences);
+      // ✅ AJOUT : fusion bilans + renfoPresences
+p.bilans = mergeUniqueDates(p.bilans, q.bilans);
+p.renfoPresences = mergeUniqueDates(p.renfoPresences, q.renfoPresences);
       // Option : garder les infos non vides de q si p est vide
       if (!p.phone && q.phone) p.phone = q.phone;
       if (!p.rejet && q.rejet) p.rejet = q.rejet;
@@ -3551,6 +3554,10 @@ C.presences = Array.from(setPres);
 // AJOUT : fusion des bilans (unique)
 const setBil = new Set([...(C.bilans||[]), ...(D.bilans||[])]);
 C.bilans = Array.from(setBil);
+
+  // ✅ AJOUT : fusion des renfoPresences (unique)
+const setRenfo = new Set([...(C.renfoPresences||[]), ...(D.renfoPresences||[])]);
+C.renfoPresences = Array.from(setRenfo);
 
 
   // lastFactureDate = plus récente
