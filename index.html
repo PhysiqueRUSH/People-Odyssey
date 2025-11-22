@@ -445,24 +445,34 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
   align-items:center; 
 }
 
-/* Info-bulle éphémère pour ❓ */
+/* Info-bulle éphémère pour ❓ / 💬 / ⚠️ etc.
+   ✅ Version non tronquée, multi-ligne, scroll si très longue */
 .tooltip-bubble{
   position:absolute;
   right:.6rem;
+  left:.6rem;                 /* ✅ permet une bulle large */
   top:50%;
   transform:translateY(-50%);
-  background:rgba(0,0,0,.9);
+  background:rgba(0,0,0,.95);
   color:#fff;
-  padding:.35rem .55rem;
-  border-radius:6px;
-  font-size:.9rem;
+  padding:.5rem .7rem;
+  border-radius:8px;
+  font-size:.95rem;
   pointer-events:none;
   z-index:10;
-  max-width:70%;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
+
+  /* ✅ plus de troncature */
+  white-space:pre-wrap;       /* garde les retours à la ligne si présents */
+  overflow-wrap:anywhere;     /* coupe les mots trop longs */
+  word-break:break-word;
+
+  /* ✅ sécurité écran */
+  max-width: 90vw;            /* ne dépasse pas la largeur */
+  max-height: 60vh;           /* ne dépasse pas la hauteur */
+  overflow:auto;              /* scroll si énorme */
+  text-overflow:unset;        /* au cas où */
 }
+
 
 /* Pour placer les bulles par rapport aux LI */
 .patient-list li, #specialList li, #day-patient-list li { position:relative; }
