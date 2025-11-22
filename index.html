@@ -429,6 +429,23 @@
   width: auto;  /* sécurité si une règle globale force une largeur */
 }
 
+/* OCR WhatsApp liste spéciale */
+#special-ocr-results ul{
+  list-style: disc;
+  margin: .5rem 0 0 1.2rem;
+  padding: 0;
+}
+#special-ocr-results li{
+  margin: .35rem 0;
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+}
+#special-ocr-results input[type="checkbox"]{
+  vertical-align: middle;
+  margin-right: .45rem;
+}
+ 
 
  /* --- Badges & actions en ligne --- */
 li .emoji { margin-left:.35rem; cursor:default; user-select:none; }
@@ -580,10 +597,10 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
 
 
 
-<!-- Rangée 1 : +  |  📌  |  📸Prévus🧾 -->
+<!-- Rangée 1 : +  |  👟🏋🏻  |  📸Prévus🧾 -->
 <div class="actions" id="row-top">
   <button onclick="showAddScreen()">➕🙋‍♂️/🙋‍♀️</button>
-  <button id="pinButton" class="pin-btn" title="Liste spéciale" onclick="showSpecialList()">📌</button>
+  <button id="pinButton" class="pin-btn" title="Liste spéciale" onclick="showSpecialList()">👟🏋🏻</button>
   <button onclick="showOcrScreen()">📸Prévus🧾</button>
 </div>
 
@@ -670,6 +687,14 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
 <div id="special-screen" class="container">
   <h3 id="special-title">Liste spéciale</h3>
   <ul class="patient-list" id="specialList"></ul>
+    <hr style="opacity:.2;margin:1rem 0;">
+
+  <h4>OCR Sondage WhatsApp (Renfo du soir)</h4>
+  <input type="file" id="special-ocr-file" accept="image/*"><br>
+  <button class="save-btn" id="special-ocr-process-btn">🔍 Scanner</button>
+
+  <div id="special-ocr-results" style="margin:.6rem 0;"></div>
+  <button class="save-btn" id="special-ocr-import-btn" style="display:none;">✅ Valider sélection</button>
   <div class="bottom-actions">
     <button onclick="showCalendar()">Calendrier</button>
     <button onclick="showMainScreen()">↩ Retour</button>
@@ -2740,6 +2765,99 @@ function showFactureList(filterMode) {
   }
 }
 
+// =========================
+// OCR WHATSAPP (LISTE SPÉCIALE)
+// =========================
+
+// mots à ignorer dans les votes WhatsApp
+const WHATSAPP_STOPWORDS = new Set([
+  "sport", "SPORT", "Sport"
+]);
+
+function stripPunct(s){
+  return (s||"").replace(/[-’']/g," ").replace(/\s+/g," ").trim();
+}
+
+// Similarité "souple" : compare normal + sans tirets
+function softSim(a,b){
+  a = normName(a); b = normName(b);
+  const a2 = stripPunct(a);
+  const b2 = stripPunct(b);
+  return Math.max(similarity(a,b), similarity(a2,b2));
+}
+
+// Nettoyage texte OCR WhatsApp -> liste de "candidats" (1 ou plusieurs tokens)
+function extractWhatsappCandidates(rawText){
+  const lines = (rawText||"").split("\n")
+    .map(l => l.replace(/\d{1,2}\s+\w+\s+\d{4}.*/i, ""))  // enlève "20 novembre, 18:19"
+    .map(l => l.replace(/\d{1,2}:\d{2}/g,""))            // heures simples
+    .map(l => l.replace(/[|@+]/g," "))
+    .map(l => l.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ \-’']/g," ")) // lettres + tirets + apostrophes
+    .map(l => l.replace(/\s+/g," ").trim())
+    .filter(l => l.length > 1);
+
+  const out = [];
+  const seen = new Set();
+
+  for (const line of lines){
+    // tokens en gardant accents/tirets
+    let toks = line.split(/\s+/).filter(Boolean);
+
+    // supprime stopwords et initiales seules (ex: "G")
+    toks = toks.filter(t=>{
+      const low = t.toLowerCase();
+      if (WHATSAPP_STOPWORDS.has(low)) return false;
+      if (t.length === 1) return false;  // initiales
+      return true;
+    });
+
+    if (toks.length === 0) continue;
+
+    // on garde l'expression entière comme candidat
+    const cand = toks.join(" ");
+    const key = normName(cand);
+    if (!seen.has(key)){
+      seen.add(key);
+      out.push(cand);
+    }
+  }
+  return out;
+}
+
+// Trouve le meilleur match liste spéciale à partir d'un candidat WhatsApp
+function bestMatchSpecial(cand, specialPatients){
+  const candNorm = normName(cand);
+
+  let best = null;
+  let bestScore = 0;
+
+  for (const sp of specialPatients){
+    const nomNorm = normName(sp.nom);
+    const prenomNorm = normName(sp.prenom);
+
+    // tokens de prénom (gère composés)
+    const prenomTokens = stripPunct(prenomNorm).split(/\s+/).filter(Boolean);
+
+    // match direct sur nom / prénom / token prénom
+    let score = 0;
+    if (candNorm === nomNorm) score = 1;
+    if (candNorm === prenomNorm) score = Math.max(score, 1);
+    if (prenomTokens.includes(stripPunct(candNorm))) score = Math.max(score, 1);
+
+    // fuzzy (Anne-Do vs Anne-Dominique)
+    score = Math.max(score, softSim(candNorm, prenomNorm));
+    score = Math.max(score, softSim(candNorm, nomNorm));
+
+    if (score > bestScore){
+      bestScore = score;
+      best = sp;
+    }
+  }
+
+  // seuil : au moins ~0.78 pour surnom/troncature
+  if (best && bestScore >= 0.78) return best;
+  return null;
+}
 
 
 
@@ -2912,10 +3030,8 @@ function importPresenceDatesChecked(){
 function normalizeOcrName(line) {
   if (!line) return null;
 
-  // Tokenisation en conservant accents, tirets et apostrophes
   const tokens = line.split(/\s+/).filter(Boolean);
 
-  // Séparer les tokens UPPERCASE (NOM) et les tokens Capitalisés (Prénom)
   const up = [];
   let first = [];
 
@@ -2924,20 +3040,35 @@ function normalizeOcrName(line) {
     if (!hasLetter) continue;
 
     const isUpper = t === t.toUpperCase() && t.length >= 2;
-    const isCap   = /^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ'’-]+$/.test(t); // Prénom capitalisé (accents ok)
+
+    // Prénom capitalisé normal
+    const isCap = /^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ'’-]+$/.test(t);
+
+    // ✅ Prénom en MAJUSCULES mais avec tiret/apostrophe (JEAN-LOUIS)
+    const isUpperHyphenFirst = isUpper && /[-’']/.test(t) && t.length >= 3;
+
+    // ✅ Prénom mixte avec tiret (Jean-Louis, JEAN-Louis, etc.)
+    const isMixedHyphenFirst = /^[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*[-’'][A-Za-zÀ-ÖØ-öø-ÿ'’-]+$/.test(t);
 
     if (isUpper) up.push(t);
-    else if (isCap) first.push(t);
+    if (isCap || isUpperHyphenFirst || isMixedHyphenFirst) first.push(t);
   }
 
-  // Exclure explicitement "Bon" détecté comme prénom (ex: "DESUERT Bon Valérie" → "DESUERT Valérie")
+  // Exclure "Bon"
   first = first.filter(tok => tok.toLowerCase() !== "bon");
 
-  // Il faut au moins un NOM (upper) et au moins un Prénom (capitalisé)
+  // ✅ fallback : si tout est en majuscules (ROGER JEAN-LOUIS)
+  if (first.length === 0 && up.length >= 2) {
+    const surnameFallback = up[0];
+    const firstnameFallback = up.slice(1).join(" ");
+    if (surnameFallback.length >= 3 && firstnameFallback.length >= 3) {
+      return `${surnameFallback} ${firstnameFallback}`;
+    }
+    return null;
+  }
+
   if (up.length === 0 || first.length === 0) return null;
 
-  // Cas "NOM NOM Prénom" : si les deux premiers NOM sont identiques (ignorer tirets/’)
-  // on compacte en ne gardant qu'un seul NOM.
   let surname = up[0];
   if (up.length >= 2) {
     const n1 = up[0].replace(/[-’']/g, "");
@@ -2945,15 +3076,12 @@ function normalizeOcrName(line) {
     if (n1 === n2) surname = up[0];
   }
 
-  // Prénom = concaténation des tokens capitalisés restants
   const firstname = first.join(" ");
 
-  // Filtre final : longueur minimale
   if (surname.length < 3 || firstname.length < 3) return null;
 
   return `${surname} ${firstname}`;
 }
-
 
 
 function showOcrResults(lines) {
@@ -2965,33 +3093,52 @@ function showOcrResults(lines) {
     return;
   }
 
+  // Date ciblée par cet OCR (vide = aujourd'hui)
+  let dateStr = document.getElementById("ocr-presence-date").value.trim();
+  if (!dateStr) dateStr = todayStr();
+  else dateStr = normalizeDate(dateStr);
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+
   const ul = document.createElement("ul");
   let any = false;
 
   lines.forEach(fullName => {
     const parts = String(fullName || "").trim().split(/\s+/);
-    if (parts.length < 2) return; // pas de prénom → on ignore
+    if (parts.length < 2) return;
 
     const surname   = (parts[0] || "").trim();
     const firstname = (parts.slice(1).join(" ") || "").trim();
-
-    // garde-fou d’affichage : ignorer si < 3 caractères pour NOM ou Prénom
     if (surname.length < 3 || firstname.length < 3) return;
+
+    // Cherche un match existant (exact ou flou)
+    let match = patients.find(p => keyName(p.nom, p.prenom) === keyName(surname, firstname));
+    if (!match) {
+      match = patients.find(p => similarity(p.nom + " " + p.prenom, fullName) > 0.85);
+    }
+
+    // ✅ Si match existe ET déjà présent (manuel/OCR) OU programmé ce jour => on NE propose PAS
+    if (match) {
+      const alreadyReal = hasRealSessionOnDate(match, dateStr);
+      const alreadyScheduled = isScheduledOnDate(match, dateStr);
+      if (alreadyReal || alreadyScheduled) return;
+    }
 
     const li = document.createElement("li");
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.checked = true; // logique “Prévus” : tout coché par défaut
-    cb.value = fullName;
+    cb.checked = true;
+    cb.value = `${surname} ${firstname}`;
 
     li.appendChild(cb);
-    li.appendChild(document.createTextNode(" " + fullName));
+    li.appendChild(document.createTextNode(" " + `${surname} ${firstname}`));
     ul.appendChild(li);
     any = true;
   });
 
   if (!any) {
-    div.innerHTML = "<p>Aucun patient détecté.</p>";
+    div.innerHTML = "<p>Aucun patient à proposer (tous déjà présents/programmés).</p>";
+    document.getElementById("ocr-import-confirm").style.display = "none";
     return;
   }
 
@@ -3026,7 +3173,8 @@ document.getElementById("ocr-import-confirm").addEventListener("click", () => {
       match = patients.find(p => similarity(p.nom + " " + p.prenom, name) > 0.85);
     }
 
-    if (!match) {
+       if (!match) {
+      // nouveau patient -> on l'ajoute, et la présence est forcément nouvelle
       patients.push({
         nom,
         prenom,
@@ -3035,20 +3183,21 @@ document.getElementById("ocr-import-confirm").addEventListener("click", () => {
         notes: "",
         presences: [dateStr],
         lastFactureDate: null,
-        bilans:[],
-
-          // ✅ Renfo du soir (tags esthétiques)
-  renfoPresences: [],
-
+        bilans: [],
+        renfoPresences: [],
         rejetCount: 0,
         rejetMutuelle: false,
         rejetSecu: false,
-
-        // ✅ période du rejet
         rejetPeriod: ""
       });
+
     } else {
-      if (!match.presences.includes(dateStr)) match.presences.push(dateStr);
+      // ✅ si déjà séance réelle OU programmée ce jour, on ne duplique pas
+      const alreadyReal = hasRealSessionOnDate(match, dateStr);
+      const alreadyScheduled = isScheduledOnDate(match, dateStr);
+      if (!alreadyReal && !alreadyScheduled) {
+        if (!match.presences.includes(dateStr)) match.presences.push(dateStr);
+      }
     }
   });
 
@@ -3155,7 +3304,7 @@ function removeFromSpecialList() {
     renderSpecialList();
   }
 
-  // Mise à jour de la pastille 📌
+  // Mise à jour de la pastille 👟🏋🏻
   updatePinButton();
 }
       
@@ -3199,7 +3348,7 @@ function nonFactCount(p) {
 
 
 
-// Met à jour la couleur + clignotement du bouton 📌
+// Met à jour la couleur + clignotement du bouton 👟🏋🏻
 function updatePinButton() {
   const btn = document.getElementById("pinButton");
   if (!btn) return;
@@ -3387,6 +3536,54 @@ function renfoDuSoir() {
   safeRefreshCalendar();
 }
 
+// Variante silencieuse pour appliquer Renfo à un patient donné
+function renfoDuSoirForIndex(patients, idx){
+  const p = patients[idx];
+  if(!p) return false;
+
+  if (!Array.isArray(p.presences)) p.presences = [];
+  if (!Array.isArray(p.renfoPresences)) p.renfoPresences = [];
+
+  const today = new Date();
+  const todayStrVal = formatDate(today);
+
+  // lundi semaine courante
+  const day = today.getDay();
+  const monday = new Date(today);
+  const diffToMonday = (day === 0 ? -6 : 1) - day;
+  monday.setDate(today.getDate() + diffToMonday);
+
+  const weekdays = [];
+  for (let k = 0; k < 5; k++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + k);
+    weekdays.push({ d, s: formatDate(d) });
+  }
+
+  const ranked = weekdays
+    .map(w => ({ ...w, load: countPresences(w.s) }))
+    .sort((a,b) => (a.load - b.load) || (a.d - b.d));
+
+  const toAdd = [];
+
+  // aujourd'hui
+  if (!toAdd.includes(todayStrVal)) toAdd.push(todayStrVal);
+
+  // jour le moins chargé
+  for (const w of ranked){
+    if (toAdd.length >= 2) break;
+    if (!toAdd.includes(w.s)) toAdd.push(w.s);
+  }
+
+  toAdd.forEach(d=>{
+    if (!p.presences.includes(d)) p.presences.push(d);
+    if (!p.renfoPresences.includes(d)) p.renfoPresences.push(d);
+  });
+
+  patients[idx] = p;
+  return true;
+}
+      
 
 // ====== OCR Doctolib sur l'écran Ajout patient (ajoute des fiches patients, PAS de présences) ======
 async function processAddOcrFiles() {
@@ -3533,6 +3730,178 @@ function importAddOcrSelection() {
   document.getElementById("add-ocr-import-btn").style.display = "none";
 }
 
+// OCR WhatsApp -> propose patients liste spéciale ou "???"
+async function processSpecialWhatsappOcr(){
+  const file = document.getElementById("special-ocr-file").files[0];
+  if (!file){ alert("Sélectionne une capture WhatsApp."); return; }
+
+  const zone = document.getElementById("special-ocr-results");
+  const btnImport = document.getElementById("special-ocr-import-btn");
+  zone.innerHTML = "🔍 OCR WhatsApp en cours...";
+  btnImport.style.display = "none";
+
+  const { data:{ text } } = await Tesseract.recognize(file, "fra");
+
+  const candidates = extractWhatsappCandidates(text); // ["Damien", "Olivier", "Anne-Do", ...]
+
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const specialKeys = getSpecialKeys();
+  const specialPatients = specialKeys
+    .map(k => patients.find(p => keyName(p.nom, p.prenom) === k))
+    .filter(Boolean);
+
+  // résultats à afficher
+  const results = [];
+  const seenOut = new Set();
+
+  for (const cand of candidates){
+    const match = bestMatchSpecial(cand, specialPatients);
+
+    if (match){
+      const k = keyName(match.nom, match.prenom);
+      if (!seenOut.has(k)){
+        seenOut.add(k);
+        results.push({
+          type:"KNOWN",
+          key:k,
+          label:`${match.nom} ${match.prenom} (détecté: ${cand})`
+        });
+      }
+    } else {
+      const unkKey = "UNKNOWN|" + cand;
+      if (!seenOut.has(unkKey)){
+        seenOut.add(unkKey);
+        results.push({
+          type:"UNKNOWN",
+          key:unkKey,
+          label:`${cand} ???`
+        });
+      }
+    }
+  }
+
+  renderSpecialWhatsappResults(results);
+}
+
+function renderSpecialWhatsappResults(results){
+  const zone = document.getElementById("special-ocr-results");
+  zone.innerHTML = "";
+
+  if (!results || results.length === 0){
+    zone.innerHTML = "<p>Aucun nom exploitable détecté.</p>";
+    return;
+  }
+
+  const ul = document.createElement("ul");
+
+  results.forEach((r, idx)=>{
+    const li = document.createElement("li");
+    const id = "spw_"+idx;
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = id;
+    cb.value = r.key;
+    cb.checked = true;
+    cb.dataset.type = r.type;
+
+    const label = document.createElement("label");
+    label.setAttribute("for", id);
+    label.textContent = r.label;
+
+    li.appendChild(cb);
+    li.appendChild(label);
+
+    // toggle en cliquant la ligne
+    li.addEventListener("click", (e)=>{
+      if (e.target !== cb) cb.checked = !cb.checked;
+    });
+
+    ul.appendChild(li);
+  });
+
+  zone.appendChild(ul);
+  document.getElementById("special-ocr-import-btn").style.display = "inline-block";
+}
+
+      function importSpecialWhatsappChecked(){
+  const zone = document.getElementById("special-ocr-results");
+  const checked = zone.querySelectorAll("input[type=checkbox]:checked");
+  if (checked.length === 0){
+    alert("Coche au moins une ligne.");
+    return;
+  }
+
+  let patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  let specialKeys = getSpecialKeys();
+
+  let changed = false;
+
+  checked.forEach(cb=>{
+    const type = cb.dataset.type;
+    const val = cb.value;
+
+    if (type === "KNOWN"){
+      const idx = patients.findIndex(p => keyName(p.nom, p.prenom) === val);
+      if (idx !== -1){
+        changed = renfoDuSoirForIndex(patients, idx) || changed;
+      }
+    }
+
+    if (type === "UNKNOWN"){
+      const cand = val.replace(/^UNKNOWN\|/, "").trim();
+      const nomNew = cand.toUpperCase();
+      const prenomNew = "???";
+
+      const kNew = keyName(nomNew, prenomNew);
+
+      let idxNew = patients.findIndex(p => keyName(p.nom, p.prenom) === kNew);
+      if (idxNew === -1){
+        patients.push({
+          nom: nomNew,
+          prenom: prenomNew,
+          phone:"",
+          rejet:"",
+          notes:"",
+          presences:[],
+          lastFactureDate:null,
+          bilans:[],
+          renfoPresences:[],
+          rejetCount:0,
+          rejetMutuelle:false,
+          rejetSecu:false,
+          rejetPeriod:""
+        });
+        idxNew = patients.length - 1;
+        changed = true;
+      }
+
+      if (!specialKeys.includes(kNew)){
+        specialKeys.push(kNew);
+        changed = true;
+      }
+
+      changed = renfoDuSoirForIndex(patients, idxNew) || changed;
+    }
+  });
+
+  if (changed){
+    localStorage.setItem("patients", JSON.stringify(patients));
+    setSpecialKeys(specialKeys);
+  }
+
+  renderSpecialList();
+  renderPatients(searchInput.value);
+  updatePinButton();
+  updateMainTotals();
+  safeRefreshCalendar();
+
+  document.getElementById("special-ocr-results").innerHTML = "";
+  document.getElementById("special-ocr-import-btn").style.display = "none";
+  document.getElementById("special-ocr-file").value = "";
+
+  alert("Renfos ajoutés ✅");
+}
 
       
           // --- Téléphone & SMS ---
@@ -3557,7 +3926,8 @@ function importAddOcrSelection() {
 
 document.getElementById("pres-ocr-process-btn").addEventListener("click", processPresenceOcrFiles);
 document.getElementById("pres-ocr-import-btn").addEventListener("click", importPresenceDatesChecked);
-
+document.getElementById("special-ocr-process-btn").addEventListener("click", processSpecialWhatsappOcr);
+document.getElementById("special-ocr-import-btn").addEventListener("click", importSpecialWhatsappChecked);
 
 function globalNonFactCount(){
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
@@ -3946,7 +4316,7 @@ function importAllDataFromFile(file){
 showToday();
 cleanupBilledToday();
 showMainScreen();   // garantit un état propre
-updatePinButton();  // colore/clignote le 📌 dès le départ
+updatePinButton();  // colore/clignote le 👟🏋🏻 dès le départ
   </script>
   <script>
   if ("serviceWorker" in navigator) {
