@@ -702,11 +702,13 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     <hr style="opacity:.2;margin:1rem 0;">
 
   <h4>OCR Sondage WhatsApp (Renfo du soir)</h4>
-  <input type="file" id="special-ocr-file" accept="image/*"><br>
+  <input type="file" id="special-ocr-file-1" accept="image/*"><br>
+  <input type="file" id="special-ocr-file-2" accept="image/*"><br>
   <button class="save-btn" id="special-ocr-process-btn">🔍 Scanner</button>
 
   <div id="special-ocr-results" style="margin:.6rem 0;"></div>
   <button class="save-btn" id="special-ocr-import-btn" style="display:none;">✅ Valider sélection</button>
+
   <div class="bottom-actions">
     <button onclick="showCalendar()">Calendrier</button>
     <button onclick="showMainScreen()">↩ Retour</button>
@@ -2807,11 +2809,23 @@ function showFactureList(filterMode) {
 
 // mots à ignorer dans les votes WhatsApp (à compléter si besoin)
 const WHATSAPP_STOPWORDS = new Set([
+  // contexte renfo / whatsapp
   "sport","present","présent","ok","okay","oui","non","merci","stp","svp",
   "renfo","soir","seance","séance","aujourd","hui","demain","hier",
-  "lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche",
-  "message","messages","appel","appels","whatsapp"
+  "message","messages","appel","appels","whatsapp",
+
+  // mots de sondage / votes
+  "vote","votes","voté","votee","votees","voter","votent","sondage","resultat","résultat",
+
+  // articles / pronoms / prépositions fréquents
+  "le","la","les","un","une","des","du","de","d","au","aux",
+  "il","elle","ils","elles","on","y","yy","je","tu","vous","nous",
+
+  // mois (souvent détectés comme "noms")
+  "janvier","fevrier","février","mars","avril","mai","juin","juillet",
+  "aout","août","septembre","octobre","novembre","decembre","décembre"
 ]);
+
 
 function stripPunct(s){
   return (s||"").replace(/[-’']/g," ").replace(/\s+/g," ").trim();
@@ -2834,23 +2848,34 @@ function extractWhatsappCandidates(rawText){
     .map(l => l.replace(/[|@+]/g," "))
     .map(l => l.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ \-’']/g," ")) // lettres + tirets + apostrophes
     .map(l => l.replace(/\s+/g," ").trim())
-    .filter(l => l.length > 1);
+    .filter(l => l.length > 2);
 
   const out = [];
   const seen = new Set();
 
+  // ✅ garde seulement ce qui ressemble VRAIMENT à un nom/prénom
+  function isNameishToken(t){
+    if(!t) return false;
+    const raw = t.trim();
+    if(raw.length < 3) return false; // évite "Le" "Il" "Du" "Yy"
+
+    const low = normName(raw);
+    if(!low) return false;
+    if(WHATSAPP_STOPWORDS.has(low)) return false;
+
+    // "Damien", "Olivier", "Anne-Do", "JEAN-LOUIS"
+    if (/^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ'’-]{2,}$/.test(raw)) return true;
+    if (/^[A-ZÀ-ÖØ-Þ]{3,}$/.test(raw)) return true;
+    if (/^[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*[-’'][A-Za-zÀ-ÖØ-öø-ÿ'’-]+$/.test(raw)) return true;
+
+    return false;
+  }
+
   for (const line of lines){
-    let toks = line.split(/\s+/).filter(Boolean);
+    const toksRaw = line.split(/\s+/).filter(Boolean);
 
-    // supprime stopwords / mini-tokens
-    toks = toks.filter(t=>{
-      const low = normName(t);
-      if (!low) return false;
-      if (WHATSAPP_STOPWORDS.has(low)) return false;
-      if (low.length < 2) return false;  // évite "G" "D" etc
-      return true;
-    });
-
+    // ✅ on ne garde que les tokens "nom/prénom possibles"
+    const toks = toksRaw.filter(isNameishToken);
     if (toks.length === 0) continue;
 
     const candList = [];
@@ -2858,10 +2883,10 @@ function extractWhatsappCandidates(rawText){
     if (toks.length === 1){
       candList.push(toks[0]);
     } else {
-      // cas "NOM Prenom" ou phrase → on garde aussi les tokens seuls
-      toks.forEach(t=> candList.push(t));
-      // + le duo de début (souvent "NOM Prenom")
+      // duo de début (souvent "NOM Prénom")
       candList.push(toks.slice(0,2).join(" "));
+      // + tokens seuls (nom OU prénom)
+      toks.forEach(t=> candList.push(t));
     }
 
     for (const cand of candList){
@@ -2871,8 +2896,10 @@ function extractWhatsappCandidates(rawText){
       out.push(cand);
     }
   }
+
   return out;
 }
+
 
 // Trouve le meilleur match liste spéciale à partir d'un candidat WhatsApp
 function bestMatchSpecial(cand, specialPatients){
@@ -2891,19 +2918,25 @@ function bestMatchSpecial(cand, specialPatients){
 
     let score = 0;
 
-    // exacts ou inclusions simples
+    // exacts
     if (candNorm === nomNorm || candNorm === prenomNorm) score = 1;
-    if (nomNorm.includes(candNorm) || prenomFlat.includes(candFlat)) score = Math.max(score, 0.95);
+
+    // ✅ inclusion UNIQUEMENT si le candidat est assez long
+    if (candFlat.length >= 3){
+      if (nomNorm.includes(candNorm) || prenomFlat.includes(candFlat)){
+        score = Math.max(score, 0.95);
+      }
+    }
 
     candTokens.forEach(ct=>{
+      if (ct.length < 3) return; // ✅ ignore mini tokens en matching
+
       if (ct === nomNorm) score = Math.max(score, 1);
       if (ct === prenomNorm) score = Math.max(score, 1);
       if (prenomTokens.includes(ct)) score = Math.max(score, 1);
 
-      // prefix (ex: "anne do" vs "anne dominique")
       if (prenomFlat.startsWith(ct) && ct.length >= 3) score = Math.max(score, 0.9);
 
-      // fuzzy
       score = Math.max(score, softSim(ct, prenomNorm));
       score = Math.max(score, softSim(ct, nomNorm));
       prenomTokens.forEach(pt=>{
@@ -2917,13 +2950,14 @@ function bestMatchSpecial(cand, specialPatients){
     }
   }
 
-  // seuil adaptatif : plus tolérant pour prénoms courts
+  // ✅ seuil un peu plus strict pour petits candidats
   const len = candTokens.join("").length;
-  const threshold = len <= 4 ? 0.70 : len <= 6 ? 0.75 : 0.78;
+  const threshold = len <= 4 ? 0.80 : len <= 6 ? 0.78 : 0.80;
 
   if (best && bestScore >= threshold) return best;
   return null;
 }
+
 
 
     // --- OCR Doctolib ---
@@ -3804,21 +3838,32 @@ function importAddOcrSelection() {
 
 // OCR WhatsApp -> propose patients liste spéciale ou "???"
 async function processSpecialWhatsappOcr(){
-  const file = document.getElementById("special-ocr-file").files[0];
-  if (!file){ alert("Sélectionne une capture WhatsApp."); return; }
+  const files = [
+    document.getElementById("special-ocr-file-1").files[0],
+    document.getElementById("special-ocr-file-2").files[0]
+  ].filter(Boolean);
+
+  if (files.length === 0){
+    alert("Sélectionne au moins une capture WhatsApp.");
+    return;
+  }
 
   const zone = document.getElementById("special-ocr-results");
   const btnImport = document.getElementById("special-ocr-import-btn");
   zone.innerHTML = "🔍 OCR WhatsApp en cours...";
   btnImport.style.display = "none";
 
-  const { data:{ text } } = await Tesseract.recognize(
-  file,
-  "fra+eng",
-  { tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀ-ÖØ-öø-ÿ-’' " }
-);
+  let text = "";
+  for (const file of files){
+    const { data:{ text: t } } = await Tesseract.recognize(
+      file,
+      "fra+eng",
+      { tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀ-ÖØ-öø-ÿ-’' " }
+    );
+    text += "\n" + t;
+  }
 
-  const candidates = extractWhatsappCandidates(text); // ["Damien", "Olivier", "Anne-Do", ...]
+  const candidates = extractWhatsappCandidates(text);
 
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const specialKeys = getSpecialKeys();
@@ -3826,7 +3871,6 @@ async function processSpecialWhatsappOcr(){
     .map(k => patients.find(p => keyName(p.nom, p.prenom) === k))
     .filter(Boolean);
 
-  // résultats à afficher
   const results = [];
   const seenOut = new Set();
 
@@ -3858,6 +3902,7 @@ async function processSpecialWhatsappOcr(){
 
   renderSpecialWhatsappResults(results);
 }
+
 
 function renderSpecialWhatsappResults(results){
   const zone = document.getElementById("special-ocr-results");
@@ -3974,7 +4019,8 @@ function renderSpecialWhatsappResults(results){
 
   document.getElementById("special-ocr-results").innerHTML = "";
   document.getElementById("special-ocr-import-btn").style.display = "none";
-  document.getElementById("special-ocr-file").value = "";
+  document.getElementById("special-ocr-file-1").value = "";
+document.getElementById("special-ocr-file-2").value = "";
 
   alert("Renfos ajoutés ✅");
 }
