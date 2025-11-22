@@ -761,6 +761,11 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
 </div>
 <input type="text" id="info-ord-details" placeholder="ordonnance du jj/mm/aaaa — localisation"
        style="width:100%;margin:.6rem 0 .2rem 0;padding:.6rem;border:none;border-radius:6px;display:none;">
+  <!-- Tarif séance -->
+  <label for="info-tarif" style="display:block;margin-top:.6rem;margin-bottom:.2rem;">
+    Tarif de la séance (€)
+  </label>
+  <input type="text" id="info-tarif" inputmode="decimal" placeholder="18,20">
 
   <button class="save-btn" onclick="saveInfo()">💾 Enregistrer</button>
   <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
@@ -862,6 +867,12 @@ function normName(s){return (s||"").toLowerCase().normalize("NFD").replace(/[\u0
 function samePerson(aNom,aPre,bNom,bPre){return normName(aNom)===normName(bNom) && normName(aPre)===normName(bPre);}
 function mergeUniqueDates(a=[],b=[]){return Array.from(new Set([...a,...b]));}
 
+const DEFAULT_TARIF = 18.2;
+
+function patientTarif(p){
+  const v = (p && p.tarifSeance != null) ? Number(p.tarifSeance) : NaN;
+  return (Number.isFinite(v) && v > 0) ? v : DEFAULT_TARIF;
+}
       
       // --- Utilitaires dates ---
     function formatDate(date) {
@@ -887,20 +898,27 @@ function getBilledTodayMap(){
   catch(e){ return {}; }
 }
 
-function setBilledToday(k, dateStr, count){
+// Nouveau format: { [keyName]: { date, count, amount } }
+// Compat: {date,count} ou "jj/mm/aaaa"
+function setBilledToday(k, dateStr, count, amount){
   const m = getBilledTodayMap();
-
-  // cumul si même jour pour ce patient
   const prev = m[k];
+
   if (prev && typeof prev === "object" && prev.date === dateStr){
-    m[k] = { date: dateStr, count: (prev.count || 0) + (count || 0) };
+    m[k] = {
+      date: dateStr,
+      count: (prev.count || 0) + (count || 0),
+      amount: (prev.amount || 0) + (amount || 0)
+    };
   } else {
-    m[k] = { date: dateStr, count: typeof count === "number" ? count : 0 };
+    m[k] = {
+      date: dateStr,
+      count: typeof count === "number" ? count : 0,
+      amount: typeof amount === "number" ? amount : 0
+    };
   }
   localStorage.setItem("billedToday", JSON.stringify(m));
-
 }
-
 
 function isBilledToday(k){
   const v = getBilledTodayMap()[k];
@@ -920,6 +938,41 @@ function cleanupBilledToday(){
   }
   if (changed) localStorage.setItem("billedToday", JSON.stringify(m));
 }
+
+function getBilledTodayTotalCount(){
+  const m = getBilledTodayMap();
+  const t = todayStr();
+  let total = 0;
+  for (const k in m){
+    const v = m[k];
+    if (v && typeof v === "object"){
+      if (v.date === t) total += v.count || 0;
+    } else if (v === t){
+      total += 0;
+    }
+  }
+  return total;
+}
+
+// ✅ Total en euros facturés aujourd'hui
+function getBilledTodayTotalAmount(){
+  const m = getBilledTodayMap();
+  const t = todayStr();
+  let total = 0;
+  for (const k in m){
+    const v = m[k];
+    if (v && typeof v === "object"){
+      if (v.date === t){
+        if (typeof v.amount === "number") total += v.amount;
+        else total += (v.count || 0) * 18.2; // compat
+      }
+    } else if (v === t){
+      total += 0;
+    }
+  }
+  return total;
+}
+
 
       // Affiche un 💰 statique les jours suivants si aucune séance n’a eu lieu depuis la dernière facturation
 function shouldShowStaticBilled(p){
@@ -1061,41 +1114,65 @@ function getBillingJournal(){
 function saveBillingJournal(j){
   localStorage.setItem("billingJournalV1", JSON.stringify(j));
 }
-function addBillingToJournal(dateStr, count){
+
+// Nouveau format : { "dd/mm/aaaa": {count, amount} }
+// Compat ancien format : number
+function addBillingToJournal(dateStr, count, amount){
   if (!count || count <= 0) return;
   const j = getBillingJournal();
-  j[dateStr] = (j[dateStr] || 0) + count;
+  const prev = j[dateStr];
+
+  if (prev && typeof prev === "object"){
+    j[dateStr] = {
+      count: (prev.count || 0) + count,
+      amount: (prev.amount || 0) + (amount || 0)
+    };
+  } else {
+    const prevCount = (typeof prev === "number") ? prev : 0;
+    const prevAmount = prevCount * 18.2;
+    j[dateStr] = {
+      count: prevCount + count,
+      amount: prevAmount + (amount || 0)
+    };
+  }
+
   saveBillingJournal(j);
 }
+
 function getBillingCountForDate(dateStr){
   const j = getBillingJournal();
-  return j[dateStr] || 0;
+  const v = j[dateStr];
+  if (v && typeof v === "object") return v.count || 0;
+  return v || 0;
 }
-// Somme des facturations d'un mois (0-11)
+
+function getBillingAmountForDate(dateStr){
+  const j = getBillingJournal();
+  const v = j[dateStr];
+  if (v && typeof v === "object") {
+    if (typeof v.amount === "number") return v.amount;
+    return (v.count || 0) * 18.2;
+  }
+  const count = v || 0;
+  return count * 18.2;
+}
+
 function getMonthBillingSum(year, monthZeroBased){
   let total = 0;
   const lastDay = new Date(year, monthZeroBased + 1, 0).getDate();
   for (let d = 1; d <= lastDay; d++){
-    const ds = formatDate(new Date(year, monthZeroBased, d)); // "dd/mm/yyyy"
+    const ds = formatDate(new Date(year, monthZeroBased, d));
     total += getBillingCountForDate(ds);
   }
   return total;
 }
-      
 
-// Total des séances facturées aujourd'hui (tous patients)
-function getBilledTodayTotalCount(){
-  const m = getBilledTodayMap();
-  const t = todayStr();
+function getMonthBillingAmount(year, monthZeroBased){
   let total = 0;
-  for (const k in m){
-    const v = m[k];
-    if (v && typeof v === "object"){
-      if (v.date === t) total += v.count || 0;
-    } else if (v === t){
-      // ancien format sans "count" -> 0 par défaut
-      total += 0;
-    }
+  const lastDay = new Date(year, monthZeroBased + 1, 0).getDate();
+  for (let d = 1; d <= lastDay; d++){
+    const ds = formatDate(new Date(year, monthZeroBased, d));
+    total += getBillingAmountForDate(ds);
   }
   return total;
 }
@@ -1291,28 +1368,30 @@ function renderPatients(filter = "") {
       right.appendChild(money);
 
     } else if (hasNonFact && canShowBillingToday) {
-      const billEmoji = makeEmoji("💸", "Facturer jusqu'à aujourd'hui", ()=>{
-        const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
-        if(!ok) return;
+     const billEmoji = makeEmoji("💸", "Facturer jusqu'à aujourd'hui", ()=>{
+  const ok = confirm(`Confirmer la facturation des séances de ${p.nom} ${p.prenom} ?`);
+  if(!ok) return;
 
-        const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-        const q = patients[i];
-        if (!q) return;
+  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  const q = patients[i];
+  if (!q) return;
 
-        const countToBill = nonFactCount(q);
+  const countToBill = nonFactCount(q);
+  const amountToBill = countToBill * getTarif(q);
 
-        q.lastFactureDate = todayStr();
-        patients[i] = q;
-        localStorage.setItem("patients", JSON.stringify(patients));
+  q.lastFactureDate = todayStr();
+  patients[i] = q;
+  localStorage.setItem("patients", JSON.stringify(patients));
 
-        setBilledToday(k, todayStr(), countToBill);
-        addBillingToJournal(todayStr(), countToBill);
+  setBilledToday(k, todayStr(), countToBill, amountToBill);
+  addBillingToJournal(todayStr(), countToBill, amountToBill);
 
-        renderPatients(searchInput.value);
-        updatePinButton();
-        updateMainTotals();
-        safeRefreshCalendar();
-      });
+  renderPatients(searchInput.value);
+  updatePinButton();
+  updateMainTotals();
+  safeRefreshCalendar();
+});
+
       right.appendChild(billEmoji);
 
     } else if (showStaticMoney) {
@@ -1349,10 +1428,8 @@ function renderPatients(filter = "") {
     presences:[],
     lastFactureDate:null,
 
-    // Ordonnances
-    ordNonScan:false,
-    ordRenouv:false,
-    ordDetails:"",
+    tarifSeance: 18.2,
+
     bilans:[],
     
     // ✅ Renfo du soir (tags esthétiques)
@@ -1481,8 +1558,14 @@ if(!cbRen.__bound){
   });
   cbRen.__bound = true;
 }
-      
-}
+
+  // --- Tarif séance ---
+  const tarifEl = document.getElementById("info-tarif");
+  if (tarifEl){
+    const val = getTarif(p);
+    tarifEl.value = val.toFixed(2).replace(".", ",");
+  }
+   }
 
   function showPresenceSelection() {
   patientMenu.style.display = "none";
@@ -1664,13 +1747,23 @@ function makeRejetText(n, mut, sec){
   return `${n} ${seanceTxt}${who}`;
 }
 
+function getTarif(p){
+  const raw = (p?.tarifSeance ?? "").toString().replace(",", ".");
+  const t = (typeof p?.tarifSeance === "number") ? p.tarifSeance : parseFloat(raw);
+  return (isFinite(t) && t > 0)
+    ? Math.round(t*100)/100
+    : DEFAULT_TARIF;
+}
+
+      
 // Montant non réglé pour un patient
 function unpaidAmountForPatient(p){
   const n = p.rejetCount || 0;
   if (n <= 0) return 0;
   const mut = !!p.rejetMutuelle;
   const sec = !!p.rejetSecu;
-  const base = 18;
+
+  const base = getTarif(p); // ✅ tarif patient
 
   let factor = 0;
   if (mut && sec) factor = 1;
@@ -1679,6 +1772,7 @@ function unpaidAmountForPatient(p){
 
   return n * factor * base;
 }
+
 
 // Total non réglé global POUR UN MOIS (année+mois du calendrier)
 function globalUnpaidAmount(year, monthZeroBased){
@@ -1873,6 +1967,12 @@ function saveInfo() {
   p.ordNonScan = !!cbNon.checked;
   p.ordRenouv  = !!cbRen.checked;
   p.ordDetails = (det.value || "").trim();
+
+  // --- Tarif séance (pas rétroactif : il servira aux prochaines facturations) ---
+  const tarifRaw = (document.getElementById("info-tarif")?.value || "").trim().replace(",", ".");
+  let tarifNum = parseFloat(tarifRaw);
+  if(!isFinite(tarifNum) || tarifNum <= 0) tarifNum = 18.2;
+  p.tarifSeance = Math.round(tarifNum * 100) / 100;
 
   if (p.ordNonScan && p.ordRenouv) p.ordRenouv = false;
 
@@ -2092,12 +2192,11 @@ function renderCalendar() {
       dayEl.appendChild(pastille);
     }
 
-    const billedCount = getBillingCountForDate(dateStr);
-    if (billedCount > 0) {
-      const euros = Math.round(billedCount * 18.2);
+    const billedAmt = getBillingAmountForDate(dateStr);
+    if (billedAmt > 0) {
       const bill = document.createElement("div");
       bill.className = "day-bill";
-      bill.textContent = `💰 ${euros.toLocaleString('fr-FR')} €`;
+      bill.textContent = `💰 ${Math.round(billedAmt).toLocaleString('fr-FR')} €`;
       dayEl.appendChild(bill);
     }
 
@@ -2105,12 +2204,11 @@ function renderCalendar() {
     gridEl.appendChild(dayEl);
   }
 
-  const monthCount = getMonthBillingSum(currentYear, currentMonth);
-  const monthEuros = Math.round(monthCount * 18.2);
-
+  const monthAmount = getMonthBillingAmount(currentYear, currentMonth);
   const unpaid = globalUnpaidAmount(currentYear, currentMonth);
+
   const unpaidRounded = Math.round(unpaid);
-  const netMonth = Math.round(monthEuros - unpaid);
+  const netMonth = Math.round(monthAmount - unpaid);
 
   const monthEl = document.getElementById("calendar-month-total");
   if (monthEl) {
@@ -2118,6 +2216,7 @@ function renderCalendar() {
       `Total du mois : ${netMonth.toLocaleString('fr-FR')} € (rejets : ${unpaidRounded.toLocaleString('fr-FR')} €)`;
   }
 }
+
 
 
     function prevMonth() {
@@ -2502,8 +2601,8 @@ function renderFactureList() {
 
   const estimateEl = document.getElementById("facture-estimate");
   if (estimateEl) {
-    const eurosNonFact = Math.round(totalNonFact * 18.2);
-    const eurosTotal   = Math.round(eurosNonFact + totalUnpaid);
+const eurosNonFact = rows.reduce((s,r)=> s + r.nonFact * getTarif(r.p), 0);
+const eurosTotal = Math.round(eurosNonFact + totalUnpaid);
     if (totalUnpaid > 0){
       estimateEl.textContent =
         `soit environ ${eurosTotal.toLocaleString('fr-FR')} € à récupérer (dont ${Math.round(totalUnpaid).toLocaleString('fr-FR')} € non réglés)`;
@@ -2590,8 +2689,9 @@ function renderFactureList() {
           patients[idx] = q;
           localStorage.setItem("patients", JSON.stringify(patients));
 
-          setBilledToday(key, todayStr(), countToBill);
-          addBillingToJournal(todayStr(), countToBill);
+const amountToBill = countToBill * getTarif(q);
+setBilledToday(key, todayStr(), countToBill, amountToBill);
+addBillingToJournal(todayStr(), countToBill, amountToBill);
         }
 
         renderFactureList();
@@ -2848,45 +2948,38 @@ function extractWhatsappCandidates(rawText){
     .map(l => l.replace(/[|@+]/g," "))
     .map(l => l.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ \-’']/g," ")) // lettres + tirets + apostrophes
     .map(l => l.replace(/\s+/g," ").trim())
-    .filter(l => l.length > 2);
+    .filter(l => l.length > 1);
 
   const out = [];
   const seen = new Set();
 
-  // ✅ garde seulement ce qui ressemble VRAIMENT à un nom/prénom
-  function isNameishToken(t){
-    if(!t) return false;
-    const raw = t.trim();
-    if(raw.length < 3) return false; // évite "Le" "Il" "Du" "Yy"
-
-    const low = normName(raw);
-    if(!low) return false;
-    if(WHATSAPP_STOPWORDS.has(low)) return false;
-
-    // "Damien", "Olivier", "Anne-Do", "JEAN-LOUIS"
-    if (/^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ'’-]{2,}$/.test(raw)) return true;
-    if (/^[A-ZÀ-ÖØ-Þ]{3,}$/.test(raw)) return true;
-    if (/^[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*[-’'][A-Za-zÀ-ÖØ-öø-ÿ'’-]+$/.test(raw)) return true;
-
-    return false;
-  }
-
   for (const line of lines){
-    const toksRaw = line.split(/\s+/).filter(Boolean);
+    let toks = line.split(/\s+/).filter(Boolean);
 
-    // ✅ on ne garde que les tokens "nom/prénom possibles"
-    const toks = toksRaw.filter(isNameishToken);
+    // supprime stopwords / mini-tokens
+    toks = toks.filter(t=>{
+      const low = normName(t);
+      if (!low) return false;
+      if (WHATSAPP_STOPWORDS.has(low)) return false;
+      if (low.length < 2) return false;  // évite "G" "D" etc
+      return true;
+    });
+
     if (toks.length === 0) continue;
 
     const candList = [];
 
     if (toks.length === 1){
       candList.push(toks[0]);
+    } else if (toks.length === 2){
+      // ✅ Ligne simple "Nom Prénom" -> on ne garde QUE le duo
+      //    => évite "mot1 ???", "mot2 ???", "mot1 mot2 ???"
+      candList.push(toks.join(" "));
     } else {
-      // duo de début (souvent "NOM Prénom")
-      candList.push(toks.slice(0,2).join(" "));
-      // + tokens seuls (nom OU prénom)
+      // phrase / plus de 2 mots → on garde tokens seuls pour matcher
       toks.forEach(t=> candList.push(t));
+      // + le duo de début (souvent "NOM Prenom")
+      candList.push(toks.slice(0,2).join(" "));
     }
 
     for (const cand of candList){
@@ -2896,9 +2989,9 @@ function extractWhatsappCandidates(rawText){
       out.push(cand);
     }
   }
-
   return out;
 }
+
 
 
 // Trouve le meilleur match liste spéciale à partir d'un candidat WhatsApp
@@ -3282,6 +3375,9 @@ document.getElementById("ocr-import-confirm").addEventListener("click", () => {
         notes: "",
         presences: [dateStr],
         lastFactureDate: null,
+
+tarifSeance: 18.2,
+        
         bilans: [],
         renfoPresences: [],
          ordNonScan: false,
@@ -3808,6 +3904,9 @@ function importAddOcrSelection() {
         notes:"",
         presences:[],
         lastFactureDate:null,
+
+tarifSeance: 18.2,
+        
         bilans:[],
         
   // ✅ Renfo du soir (tags esthétiques)
@@ -3837,13 +3936,14 @@ function importAddOcrSelection() {
 }
 
 // OCR WhatsApp -> propose patients liste spéciale ou "???"
+// OCR WhatsApp -> propose patients liste spéciale ou "inconnu"
 async function processSpecialWhatsappOcr(){
   const files = [
     document.getElementById("special-ocr-file-1").files[0],
-    document.getElementById("special-ocr-file-2").files[0]
+    document.getElementById("special-ocr-file-2").files[0],
   ].filter(Boolean);
 
-  if (files.length === 0){
+  if (!files.length){
     alert("Sélectionne au moins une capture WhatsApp.");
     return;
   }
@@ -3853,17 +3953,17 @@ async function processSpecialWhatsappOcr(){
   zone.innerHTML = "🔍 OCR WhatsApp en cours...";
   btnImport.style.display = "none";
 
-  let text = "";
-  for (const file of files){
-    const { data:{ text: t } } = await Tesseract.recognize(
-      file,
+  let rawText = "";
+  for (const f of files){
+    const { data:{ text } } = await Tesseract.recognize(
+      f,
       "fra+eng",
       { tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀ-ÖØ-öø-ÿ-’' " }
     );
-    text += "\n" + t;
+    rawText += "\n" + text;
   }
 
-  const candidates = extractWhatsappCandidates(text);
+  const candidates = extractWhatsappCandidates(rawText);
 
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const specialKeys = getSpecialKeys();
@@ -3894,7 +3994,7 @@ async function processSpecialWhatsappOcr(){
         results.push({
           type:"UNKNOWN",
           key:unkKey,
-          label:`${cand} ???`
+          label:`${cand}` // ✅ pas de ???
         });
       }
     }
@@ -3923,8 +4023,10 @@ function renderSpecialWhatsappResults(results){
     cb.type = "checkbox";
     cb.id = id;
     cb.value = r.key;
-    cb.checked = true;
     cb.dataset.type = r.type;
+
+    // ✅ KNOWN cochés par défaut / UNKNOWN décochés
+    cb.checked = (r.type === "KNOWN");
 
     const label = document.createElement("label");
     label.setAttribute("for", id);
@@ -3933,7 +4035,6 @@ function renderSpecialWhatsappResults(results){
     li.appendChild(cb);
     li.appendChild(label);
 
-    // toggle en cliquant la ligne
     li.addEventListener("click", (e)=>{
       if (e.target !== cb) cb.checked = !cb.checked;
     });
@@ -3945,9 +4046,12 @@ function renderSpecialWhatsappResults(results){
   document.getElementById("special-ocr-import-btn").style.display = "inline-block";
 }
 
-      function importSpecialWhatsappChecked(){
+
+function importSpecialWhatsappChecked(){
   const zone = document.getElementById("special-ocr-results");
-  const checked = zone.querySelectorAll("input[type=checkbox]:checked");
+  if (!zone) return;
+
+  const checked = zone.querySelectorAll('input[type="checkbox"]:checked');
   if (checked.length === 0){
     alert("Coche au moins une ligne.");
     return;
@@ -3955,72 +4059,137 @@ function renderSpecialWhatsappResults(results){
 
   let patients = JSON.parse(localStorage.getItem("patients") || "[]");
   let specialKeys = getSpecialKeys();
-
   let changed = false;
+
+  const findPatientIndexByKey = (k) =>
+    patients.findIndex(p => keyName(p.nom, p.prenom) === k);
 
   checked.forEach(cb=>{
     const type = cb.dataset.type;
-    const val = cb.value;
+    const val  = (cb.value || "").trim();
+    if (!val) return;
 
+    // -------------------------
+    // 1) CAS "KNOWN"
+    // -------------------------
     if (type === "KNOWN"){
-      const idx = patients.findIndex(p => keyName(p.nom, p.prenom) === val);
+      const idx = findPatientIndexByKey(val);
       if (idx !== -1){
-        changed = renfoDuSoirForIndex(patients, idx) || changed;
+        if (renfoDuSoirForIndex(patients, idx)) changed = true;
       }
+      return;
     }
 
+    // -------------------------
+    // 2) CAS "UNKNOWN"
+    // -------------------------
     if (type === "UNKNOWN"){
       const cand = val.replace(/^UNKNOWN\|/, "").trim();
-      const nomNew = cand.toUpperCase();
-      const prenomNew = "???";
+      if (!cand) return;
+
+      const toks = cand.split(/\s+/).filter(Boolean);
+      if (toks.length === 0) return;
+
+      let nomNew = "";
+      let prenomNew = "";
+
+      if (toks.length >= 2){
+        // Heuristique légère : si on voit "Prénom NOM", on inverse.
+        const t0 = toks[0], t1 = toks[1];
+        const t0IsUpper = t0 === t0.toUpperCase();
+        const t1IsUpper = t1 === t1.toUpperCase();
+
+        if (!t0IsUpper && t1IsUpper){
+          nomNew = t1.toUpperCase();
+          prenomNew = toks.slice(0,1).concat(toks.slice(2)).join(" ");
+        } else {
+          nomNew = toks[0].toUpperCase();
+          prenomNew = toks.slice(1).join(" ");
+        }
+
+        prenomNew = prenomNew
+          .split(/\s+/)
+          .map(w => w ? (w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()) : "")
+          .join(" ")
+          .trim();
+      } else {
+        // 1 seul mot -> on le garde tel quel sans "???"
+        nomNew = toks[0].toUpperCase();
+        prenomNew = "";
+      }
 
       const kNew = keyName(nomNew, prenomNew);
 
+      // 2.a) exact match
       let idxNew = patients.findIndex(p => keyName(p.nom, p.prenom) === kNew);
+
+      // 2.b) fuzzy match si pas trouvé
+      if (idxNew === -1){
+        const candFull = `${nomNew} ${prenomNew}`.trim();
+        idxNew = patients.findIndex(p =>
+          similarity((p.nom + " " + p.prenom).trim(), candFull) > 0.88
+        );
+      }
+
+      // 2.c) création si toujours pas trouvé
       if (idxNew === -1){
         patients.push({
           nom: nomNew,
           prenom: prenomNew,
-          phone:"",
-          rejet:"",
-          notes:"",
-          presences:[],
-          lastFactureDate:null,
-          bilans:[],
-          renfoPresences:[],
-          rejetCount:0,
-          rejetMutuelle:false,
-          rejetSecu:false,
-          rejetPeriod:""
+          phone: "",
+          rejet: "",
+          notes: "",
+          presences: [],
+          lastFactureDate: null,
+
+          tarifSeance: DEFAULT_TARIF,
+
+          bilans: [],
+          renfoPresences: [],
+
+          ordNonScan: false,
+          ordRenouv: false,
+          ordDetails: "",
+
+          rejetCount: 0,
+          rejetMutuelle: false,
+          rejetSecu: false,
+          rejetPeriod: ""
         });
         idxNew = patients.length - 1;
         changed = true;
       }
 
-      if (!specialKeys.includes(kNew)){
-        specialKeys.push(kNew);
+      const actualKey = keyName(patients[idxNew].nom, patients[idxNew].prenom);
+
+      // 2.d) ajoute à la liste spéciale
+      if (!specialKeys.includes(actualKey)){
+        specialKeys.push(actualKey);
         changed = true;
       }
 
-      changed = renfoDuSoirForIndex(patients, idxNew) || changed;
+      // 2.e) renfo x2
+      if (renfoDuSoirForIndex(patients, idxNew)) changed = true;
     }
   });
 
   if (changed){
     localStorage.setItem("patients", JSON.stringify(patients));
-    setSpecialKeys(specialKeys);
+    setSpecialKeys(Array.from(new Set(specialKeys)));
   }
 
+  // refresh UI
   renderSpecialList();
   renderPatients(searchInput.value);
   updatePinButton();
   updateMainTotals();
   safeRefreshCalendar();
 
-  document.getElementById("special-ocr-results").innerHTML = "";
+  // reset zone OCR
+  zone.innerHTML = "";
   document.getElementById("special-ocr-import-btn").style.display = "none";
   document.getElementById("special-ocr-file-1").value = "";
-document.getElementById("special-ocr-file-2").value = "";
+  document.getElementById("special-ocr-file-2").value = "";
 
   alert("Renfos ajoutés ✅");
 }
@@ -4072,12 +4241,12 @@ function updateMainTotals(){
   if(!left || !right) return;
 
   const alerts = globalAlertCount();
-  const sessionsBilledToday = getBilledTodayTotalCount();   // <— nouveau
-  const euros = Math.round(sessionsBilledToday * 18.2);
+  const euros = Math.round(getBilledTodayTotalAmount());
 
   left.textContent  = `Total ⚠️❓📑 : ${alerts}`;
   right.textContent = `Total💰 : ${euros.toLocaleString('fr-FR')} €`;
 }
+
 
 function safeRefreshCalendar(){
   const scr = document.getElementById("calendar-screen");
@@ -4211,31 +4380,48 @@ function closeMergeModal(){
 // Render de la liste avec filtre en temps réel
 function renderMergeList(query){
   const list = document.getElementById("merge-list");
+  if (!list) return;
+
   list.innerHTML = "";
 
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const sourceIdx = selectedPatientIndex;
-  const source = patients[sourceIdx];
-  const q = (query||"").toLowerCase();
+  const q = (query || "").toLowerCase().trim();
+
+  // Si pas de patients ou source invalide
+  if (!patients.length || sourceIdx == null || !patients[sourceIdx]){
+    const empty = document.createElement("div");
+    empty.style.opacity = ".8";
+    empty.style.padding = ".4rem 0";
+    empty.textContent = "Aucun autre patient disponible.";
+    list.appendChild(empty);
+    return;
+  }
+
+  let any = false;
 
   patients.forEach((p, i)=>{
     if (i === sourceIdx) return; // exclure lui-même
-    const full = (p.nom + " " + p.prenom).toLowerCase();
+
+    const full = ((p.nom||"") + " " + (p.prenom||"")).toLowerCase();
     if (q && !full.includes(q)) return;
 
+    any = true;
     const k = keyName(p.nom, p.prenom);
 
-    const row = document.createElement("div");
+    // label => clic sur le texte coche aussi
+    const row = document.createElement("label");
     row.style.display = "flex";
     row.style.alignItems = "center";
     row.style.gap = ".5rem";
     row.style.padding = ".3rem 0";
+    row.style.cursor = "pointer";
 
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = (__mergeChosenKey === k);
     cb.addEventListener("change", ()=>{
-      // checkbox unique : si on coche celle-ci, on décoche toutes les autres
+      // checkbox unique
       __mergeChosenKey = cb.checked ? k : null;
       renderMergeList(document.getElementById("merge-search").value);
     });
@@ -4248,6 +4434,15 @@ function renderMergeList(query){
     list.appendChild(row);
   });
 
+  // Si filtre sans résultat
+  if (!any){
+    const empty = document.createElement("div");
+    empty.style.opacity = ".8";
+    empty.style.padding = ".4rem 0";
+    empty.textContent = "Aucun patient ne correspond à la recherche.";
+    list.appendChild(empty);
+  }
+
   // bind recherche une seule fois
   const inp = document.getElementById("merge-search");
   if (inp && !inp.__bound){
@@ -4257,6 +4452,7 @@ function renderMergeList(query){
     inp.__bound = true;
   }
 }
+
 
       function confirmMergeSelection(){
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
@@ -4368,7 +4564,9 @@ C.renfoPresences = Array.from(setRenfo);
 
   closeMergeModal();
   // si la fiche absorbée était dans la liste spéciale, nettoyer
-  const keys = getSpecialKeys().filter(k => keyName(C.nom, C.prenom) === k || keyName(D.nom, D.prenom) !== k);
+const cKey = keyName(C.nom, C.prenom);
+  const dKey = keyName(D.nom, D.prenom);
+  const keys = getSpecialKeys().filter(k => k !== dKey || k === cKey);
   setSpecialKeys(keys);
 
   // rafraîchir les écrans/compteurs
@@ -4423,8 +4621,14 @@ function importAllDataFromFile(file){
       }
 
       alert("Sauvegarde restaurée avec succès ✅");
-      // On reconstruit l'écran principal avec les nouvelles données
+
+      // ✅ Re-init complet (comme au chargement)
+      showToday();
+      cleanupBilledToday();
       showMainScreen();
+      updatePinButton();
+      updateMainTotals();
+
     } catch(err){
       console.error(err);
       alert("Erreur lors de la lecture du fichier de sauvegarde.");
@@ -4439,6 +4643,8 @@ showToday();
 cleanupBilledToday();
 showMainScreen();   // garantit un état propre
 updatePinButton();  // colore/clignote le 👟🏋🏻 dès le départ
+      updateMainTotals(); // ✅ assure les compteurs dès le départ
+      
   </script>
   <script>
   if ("serviceWorker" in navigator) {
@@ -4451,7 +4657,7 @@ updatePinButton();  // colore/clignote le 👟🏋🏻 dès le départ
   </script>
   
   <!-- Modal Fusion -->
-<div id="merge-modal">
+<div id="merge-modal" style="display:none;">
   <div class="menu-box">
     <h3>Fusionner avec...</h3>
     <input id="merge-search" type="text" placeholder="Rechercher un patient... (filtre en temps réel)">
