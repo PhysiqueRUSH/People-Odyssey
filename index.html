@@ -2032,7 +2032,7 @@ function saveInfo() {
 }
 
 
-    // --- Ajout présence rapide ---
+// --- Ajout présence rapide ---
 function addPresenceOffset(offset) {
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const p = patients[selectedPatientIndex];
@@ -2041,6 +2041,13 @@ function addPresenceOffset(offset) {
   const dateStr = formatDate(d);
 
   if (!p.presences.includes(dateStr)) p.presences.push(dateStr);
+
+  // ✅ FIX : si c'est une présence "classique" (via bouton Présent)
+  // on retire tout tag renfo existant sur cette date
+  if (Array.isArray(p.renfoPresences)) {
+    p.renfoPresences = p.renfoPresences.filter(x => x !== dateStr);
+  }
+
   localStorage.setItem("patients", JSON.stringify(patients));
   patientMenu.style.display = "none";
 
@@ -2054,6 +2061,7 @@ function addPresenceOffset(offset) {
   updatePinButton();
   updateMainTotals();
 }
+
 
 // Supprimer la présence d'aujourd'hui (option "Absent ce jour")
 function removePresenceToday(){
