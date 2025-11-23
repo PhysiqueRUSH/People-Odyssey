@@ -1308,7 +1308,7 @@ function renderPatients(filter = "") {
     li.appendChild(nameSpan);
 
     if (isProgrammed(p)){
-      li.appendChild(makeEmoji("🔄", "Séances programmées"));
+      li.appendChild(makeEmoji("🗓️", "Séances programmées"));
     }
 
     // ✅ Présence du jour = vraie présence OU séance programmée aujourd'hui
@@ -3623,7 +3623,7 @@ function renderSpecialList() {
     li.appendChild(nameSpan);
 
     if (isProgrammed(p)){
-      li.appendChild(makeEmoji("🔄", "Séances programmées"));
+      li.appendChild(makeEmoji("🗓️", "Séances programmées"));
     }
 
     // ✅ Présence du jour = vraie présence OU programmée aujourd'hui
