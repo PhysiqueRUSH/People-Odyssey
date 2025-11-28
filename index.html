@@ -732,7 +732,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
     <button class="back-btn" onclick="hideOcrScreen()">✖ Annuler</button>
   </div>
   
-  <!-- Écran informations patient -->
+<!-- Écran informations patient -->
 <div id="info-screen" class="container">
   <h3 id="info-title"></h3>
   <!-- NOUVEAU : édition du nom/prénom -->
@@ -743,32 +743,62 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
 
   <div class="phone-row">
     <input type="tel" id="info-phone" placeholder="Numéro de téléphone">
-    <button class="icon-btn" title="Appeler" onclick="callPatient()">📞</button>
-    <button class="icon-btn" title="SMS" onclick="smsPatient()">💬</button>
+    <button class="icon-btn" title="Appeler" onclick="callPatient()"></button> 📞
+    <button class="icon-btn" title="SMS" onclick="smsPatient()"></button> 💬
   </div>
+
   <input type="text" id="info-rejet" placeholder="Rejet de paiement">
-  <textarea id="info-notes" rows="4" placeholder="Autres notes..."></textarea>
+  <textarea id="info-notes" rows="4" placeholder="Autres notes."></textarea>
+
   <!-- Ordonnances -->
-<div class="phone-row" style="gap:.8rem; align-items:center;">
-  <label style="display:flex;align-items:center;gap:.35rem;">
-    <input type="checkbox" id="info-ord-nonscan">
-    <span>Ordonnance non scannée</span>
-  </label>
-  <label style="display:flex;align-items:center;gap:.35rem;">
-    <input type="checkbox" id="info-ord-renouv">
-    <span>Ordonnance à renouveler</span>
-  </label>
-</div>
-<input type="text" id="info-ord-details" placeholder="ordonnance du jj/mm/aaaa — localisation"
-       style="width:100%;margin:.6rem 0 .2rem 0;padding:.6rem;border:none;border-radius:6px;display:none;">
+  <div class="phone-row" style="gap:.8rem; align-items:center;">
+    <label style="display:flex;align-items:center;gap:.35rem;">
+      <input type="checkbox" id="info-ord-nonscan">
+      <span>Ordonnance non scannée</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:.35rem;">
+      <input type="checkbox" id="info-ord-renouv">
+      <span>Ordonnance à renouveler</span>
+    </label>
+  </div>
+
+  <input
+    type="text"
+    id="info-ord-details"
+    placeholder="ordonnance du jj/mm/aaaa — localisation"
+    style="width:100%;margin:.6rem 0 .2rem 0;padding:.6rem;border:none;border-radius:6px;display:none;"
+  >
+
+  <!-- Image / document (ordonnance, attestation, etc.) -->
+  <div style="margin-top:.8rem;">
+    <label for="info-image" style="display:block;margin-bottom:.3rem;">
+      Photo / document (ordonnance, attestation, etc.)
+    </label>
+    <input type="file" id="info-image" accept="image/*" style="margin-bottom:.6rem;">
+
+    <div id="info-image-preview"
+         style="display:none;margin-bottom:.6rem;text-align:left;">
+      <div style="font-size:0.85rem;opacity:0.8;margin-bottom:.2rem;">
+        Image associée :
+      </div>
+      <img id="info-image-thumb"
+           style="max-width:120px;max-height:120px;border-radius:6px;cursor:pointer;border:1px solid #274b8a;"
+           alt="Image associée au patient">
+      <div style="font-size:0.75rem;opacity:0.7;margin-top:.2rem;">
+        (Touchez l'image pour l'afficher en grand)
+      </div>
+    </div>
+  </div>
+
   <!-- Tarif séance -->
-  <label for="info-tarif" style="display:block;margin-top:.6rem;margin-bottom:.2rem;">
+  <label for="info-tarif"
+         style="display:block;margin-top:.6rem;margin-bottom:.2rem;">
     Tarif de la séance (€)
   </label>
   <input type="text" id="info-tarif" inputmode="decimal" placeholder="18,20">
 
-  <button class="save-btn" onclick="saveInfo()">💾 Enregistrer</button>
-  <button class="back-btn" onclick="showMainScreen()">↩ Retour</button>
+  <button class="save-btn" onclick="saveInfo()"> Enregistrer</button> 💾
+  <button class="back-btn" onclick="showMainScreen()"> Retour</button> ↩
 </div>
 
 
@@ -829,7 +859,7 @@ li .right-edge { margin-left:auto; display:inline-flex; align-items:center; gap:
 <!-- Menu patient -->
 <div id="patient-menu">
   <div class="menu-box">
-    <button onclick="showInfoScreen()">Informations/Ordonnances/⚠️</button>
+    <button id="info-menu-btn" onclick="showInfoScreen()">Informations</button>
     <button id="present-today-btn">Présent ce jour</button>
     <button onclick="addPresenceOffset(1)">Présent demain</button>
     <button onclick="showPresenceSelection()">Sélectionner les présences</button>
@@ -858,8 +888,11 @@ let selectedPatientIndex = null;
 let presenceSelection = new Set();
 let currentDayView = null;
 let sessionsBackTarget = "main"; // "main" ou "facture"
-let bilanAddMode = false;        // mode spécial : choisir la date d'un bilan
-let menuFromSpecial = false;     // true si le menu vient de la liste spéciale
+let bilanAddMode = false; // mode spécial : choisir la date d'un bilan
+let menuFromSpecial = false; // true si le menu vient de la liste spéciale
+
+// Image temporaire utilisée dans l'écran Informations/Ordonnances
+let infoImageTemp = null;
 
 
     // --- Utilitaires syntaxe des noms ---
@@ -1414,40 +1447,30 @@ function renderPatients(filter = "") {
 
 
 
-   function savePatient() {
-  const nom = document.getElementById("nom").value.trim();
-  const prenom = document.getElementById("prenom").value.trim();
-  if (!nom || !prenom) {
-    alert("Veuillez remplir Nom et Prénom");
-    return;
-  }
-  const patients = JSON.parse(localStorage.getItem("patients") || "[]");
-  patients.push({
-    nom, prenom,
-    phone:"", rejet:"", notes:"",
-    presences:[],
-    lastFactureDate:null,
+ patients.push({
+  nom, prenom,
+  phone:"", rejet:"", notes:"",
+  presences:[],
+  lastFactureDate:null,
+  tarifSeance: 18.2,
+  bilans:[],
 
-    tarifSeance: 18.2,
-
-    bilans:[],
-    
-    // ✅ Renfo du soir (tags esthétiques)
+  // Renfo du soir (tags esthétiques) ✅
   renfoPresences: [],
-
-     // ✅ ordonnances
+  // ordonnances ✅
   ordNonScan: false,
   ordRenouv: false,
   ordDetails: "",
+  // Rejet structuré
+  rejetCount: 0,
+  rejetMutuelle: false,
+  rejetSecu: false,
+  // période du rejet (YYYY-MM) ✅
+  rejetPeriod: "",
+  // Image associée (ordonnance / doc)
+  infoImage: null
+});
 
-    // Rejet structuré
-    rejetCount: 0,
-    rejetMutuelle: false,
-    rejetSecu: false,
-
-    // ✅ période du rejet (YYYY-MM)
-    rejetPeriod: ""
-  });
 
   localStorage.setItem("patients", JSON.stringify(patients));
   document.getElementById("nom").value = "";
@@ -1514,58 +1537,138 @@ function clearMainSearch(){
       renderCalendar();
     }
   
-      function showInfoScreen() {
+function showInfoScreen() {
   patientMenu.style.display = "none";
   hideAll();
   document.getElementById("info-screen").style.display = "block";
 
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
+  if (selectedPatientIndex == null || !patients[selectedPatientIndex]) return;
   const p = patients[selectedPatientIndex];
 
-  document.getElementById("info-title").textContent = p.nom + " " + p.prenom;
+  // Titre
+  document.getElementById("info-title").textContent =
+    (p.nom || "") + " " + (p.prenom || "");
 
-  // NOUVEAU : préremplissage des champs nom/prénom
-  document.getElementById("info-nom").value = p.nom || "";
-  document.getElementById("info-prenom").value = p.prenom || "";
+  // Nom / Prénom
+  const nomInput = document.getElementById("info-nom");
+  const prenomInput = document.getElementById("info-prenom");
+  if (nomInput) nomInput.value = p.nom || "";
+  if (prenomInput) prenomInput.value = p.prenom || "";
 
-  document.getElementById("info-phone").value = p.phone || "";
-  document.getElementById("info-rejet").value = p.rejet || "";
-  document.getElementById("info-notes").value = p.notes || "";
+  // Téléphone / Rejet / Notes
+  const phoneInput = document.getElementById("info-phone");
+  const rejetInput = document.getElementById("info-rejet");
+  const notesInput = document.getElementById("info-notes");
 
-  // --- Ordonnances (mutuellement exclusives) ---
-const cbNon = document.getElementById("info-ord-nonscan");
-const cbRen = document.getElementById("info-ord-renouv");
-const det   = document.getElementById("info-ord-details");
+  if (phoneInput) phoneInput.value = p.phone || "";
+  if (rejetInput) rejetInput.value = p.rejet || "";
+  if (notesInput) notesInput.value = p.notes || "";
 
-cbNon.checked = !!p.ordNonScan;
-cbRen.checked = !!p.ordRenouv;
-det.value     = p.ordDetails || "";
+  // --- Ordonnances ---
+  const cbNon = document.getElementById("info-ord-nonscan");
+  const cbRen = document.getElementById("info-ord-renouv");
+  const det   = document.getElementById("info-ord-details");
 
-// affichage conditionnel du champ "ordonnance du ..."
-det.style.display = cbNon.checked ? "block" : "none";
+  const ordNonScan = !!p.ordNonScan;
+  const ordRenouv  = !!p.ordRenouv;
 
-// binder une seule fois
-if(!cbNon.__bound){
-  cbNon.addEventListener("change", ()=>{
-    if(cbNon.checked){ cbRen.checked = false; det.style.display = "block"; }
-    else{ det.style.display = "none"; }
-  });
-  cbNon.__bound = true;
-}
-if(!cbRen.__bound){
-  cbRen.addEventListener("change", ()=>{
-    if(cbRen.checked){ cbNon.checked = false; det.style.display = "none"; }
-  });
-  cbRen.__bound = true;
-}
+  if (cbNon) cbNon.checked = ordNonScan && !ordRenouv;
+  if (cbRen) cbRen.checked = ordRenouv;
+
+  if (det) {
+    det.value = p.ordDetails || "";
+    det.style.display = (cbNon && cbNon.checked) ? "block" : "none";
+  }
+
+  // binder une seule fois les checkbox ordonnances
+  if (cbNon && !cbNon.__bound) {
+    cbNon.addEventListener("change", () => {
+      if (cbNon.checked) {
+        if (cbRen) cbRen.checked = false;
+        if (det) det.style.display = "block";
+      } else {
+        if (det) det.style.display = "none";
+      }
+    });
+    cbNon.__bound = true;
+  }
+
+  if (cbRen && !cbRen.__bound) {
+    cbRen.addEventListener("change", () => {
+      if (cbRen.checked) {
+        if (cbNon) cbNon.checked = false;
+        if (det) det.style.display = "none";
+      }
+    });
+    cbRen.__bound = true;
+  }
 
   // --- Tarif séance ---
   const tarifEl = document.getElementById("info-tarif");
-  if (tarifEl){
+  if (tarifEl) {
     const val = getTarif(p);
     tarifEl.value = val.toFixed(2).replace(".", ",");
   }
-   }
+
+  // --- Image / document (ordonnance, attestation, etc.) ---
+  const imgInput   = document.getElementById("info-image");
+  const previewBox = document.getElementById("info-image-preview");
+  const thumb      = document.getElementById("info-image-thumb");
+
+  // On recharge l'image temporaire depuis le patient
+  infoImageTemp = p.infoImage || null;
+
+  if (previewBox && thumb) {
+    if (infoImageTemp) {
+      previewBox.style.display = "block";
+      thumb.src = infoImageTemp;
+    } else {
+      previewBox.style.display = "none";
+      thumb.src = "";
+    }
+  }
+
+  if (imgInput) {
+    // on réinitialise le champ fichier à chaque ouverture de fiche
+    imgInput.value = "";
+    if (!imgInput.__boundImage) {
+      imgInput.addEventListener("change", function () {
+        const file = this.files && this.files[0];
+        if (!file) return;
+        if (!file.type.startsWith("image/")) {
+          alert("Merci de sélectionner un fichier image.");
+          this.value = "";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          infoImageTemp = e.target.result;
+          if (previewBox && thumb) {
+            previewBox.style.display = "block";
+            thumb.src = infoImageTemp;
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+      imgInput.__boundImage = true;
+    }
+  }
+
+  if (thumb && !thumb.__boundClick) {
+    thumb.addEventListener("click", function () {
+      if (infoImageTemp) {
+        try {
+          window.open(infoImageTemp, "_blank");
+        } catch (e) {
+          // au pire, rien
+        }
+      }
+    });
+    thumb.__boundClick = true;
+  }
+}
+
 
   function showPresenceSelection() {
   patientMenu.style.display = "none";
@@ -1642,14 +1745,22 @@ function backFromPatientSessions(){
 // --- Menu patient ---
 function showPatientMenu(index) {
   selectedPatientIndex = index;
-
   const patients = JSON.parse(localStorage.getItem("patients") || "[]");
   const p = patients[selectedPatientIndex];
 
-  // ✅ Bouton Présent/Absent ce jour
+  // Bouton infos : ajoute (🖼️) si une image est associée
+  const infoBtn = document.getElementById("info-menu-btn");
+  if (infoBtn) {
+    const hasImage = !!(p && p.infoImage);
+    infoBtn.textContent = hasImage
+      ? "Informations (🖼️)"
+      : "Informations";
+  }
+
+  // Bouton Présent/Absent ce jour ✅
   const presentBtn = document.getElementById("present-today-btn");
-  if (presentBtn && p){
-    if (isPresentToday(p)){
+  if (presentBtn && p) {
+    if (isPresentToday(p)) {
       presentBtn.textContent = "Absent ce jour";
       presentBtn.onclick = () => removePresenceToday();
     } else {
@@ -1658,7 +1769,7 @@ function showPatientMenu(index) {
     }
   }
 
-  // ✅ Bouton spécial liste (inchangé)
+  // Bouton spécial liste (inchangé) ✅
   const btn = document.getElementById("special-toggle-btn");
   if (btn) {
     if (menuFromSpecial) {
@@ -1676,6 +1787,7 @@ function showPatientMenu(index) {
 
   patientMenu.style.display = "flex";
 }
+
 
 function closeMenuAndShowFactureList(mode) {
   patientMenu.style.display = "none";
@@ -1929,23 +2041,23 @@ function clearRejetModal(){
 }
 
       
-    // --- Sauvegarde infos ---
+// --- Sauvegarde infos ---
 function saveInfo() {
   let patients = JSON.parse(localStorage.getItem("patients") || "[]");
   if (selectedPatientIndex === null || !patients[selectedPatientIndex]) return;
 
   const idx = selectedPatientIndex;
-  const p = patients[idx];
+  const p   = patients[idx];
 
-  const oldNom = p.nom || "";
+  const oldNom    = p.nom || "";
   const oldPrenom = p.prenom || "";
-  const oldKey = keyName(oldNom, oldPrenom);
+  const oldKey    = keyName(oldNom, oldPrenom);
 
-  const nomInput = (document.getElementById("info-nom").value || "").trim();
+  const nomInput    = (document.getElementById("info-nom").value || "").trim();
   const prenomInput = (document.getElementById("info-prenom").value || "").trim();
 
   // Nom MAJ si saisi, sinon garde l'ancien
-  const newNom = nomInput ? nomInput.toUpperCase() : oldNom;
+  const newNom    = nomInput ? nomInput.toUpperCase() : oldNom;
   const newPrenom = prenomInput || oldPrenom;
 
   if (!newNom || !newPrenom) {
@@ -1953,30 +2065,35 @@ function saveInfo() {
     return;
   }
 
-  p.nom = newNom;
+  p.nom    = newNom;
   p.prenom = newPrenom;
-  p.phone = (document.getElementById("info-phone").value || "").trim();
-  p.rejet = (document.getElementById("info-rejet").value || "").trim();
-  p.notes = (document.getElementById("info-notes").value || "").trim();
+  p.phone  = (document.getElementById("info-phone").value || "").trim();
+  p.rejet  = (document.getElementById("info-rejet").value || "").trim();
+  p.notes  = (document.getElementById("info-notes").value || "").trim();
 
   // --- Ordonnances ---
   const cbNon = document.getElementById("info-ord-nonscan");
   const cbRen = document.getElementById("info-ord-renouv");
   const det   = document.getElementById("info-ord-details");
 
-  p.ordNonScan = !!cbNon.checked;
-  p.ordRenouv  = !!cbRen.checked;
-  p.ordDetails = (det.value || "").trim();
+  p.ordNonScan = !!(cbNon && cbNon.checked);
+  p.ordRenouv  = !!(cbRen && cbRen.checked);
+  p.ordDetails = (det && det.value || "").trim();
 
-  // --- Tarif séance (pas rétroactif : il servira aux prochaines facturations) ---
-  const tarifRaw = (document.getElementById("info-tarif")?.value || "").trim().replace(",", ".");
+  // --- Tarif séance (non rétroactif) ---
+  const tarifRaw = (document.getElementById("info-tarif")?.value || "")
+    .trim()
+    .replace(",", ".");
   let tarifNum = parseFloat(tarifRaw);
-  if(!isFinite(tarifNum) || tarifNum <= 0) tarifNum = 18.2;
+  if (!isFinite(tarifNum) || tarifNum <= 0) tarifNum = DEFAULT_TARIF;
   p.tarifSeance = Math.round(tarifNum * 100) / 100;
 
   if (p.ordNonScan && p.ordRenouv) p.ordRenouv = false;
 
-  // ---- Détection doublon exact ----
+  // --- Image associée (ordonnance / attestation) ---
+  p.infoImage = infoImageTemp || null;
+
+  // ---- Détection doublon exact (même nom/prénom normalisé) ----
   const dupIndex = patients.findIndex((q, i) =>
     i !== idx && samePerson(q.nom, q.prenom, p.nom, p.prenom)
   );
@@ -1984,51 +2101,67 @@ function saveInfo() {
   if (dupIndex !== -1) {
     const q = patients[dupIndex];
     const ok = confirm(
-      `Un autre patient porte déjà ce nom :\n\n`+
-      `A) ${p.nom} ${p.prenom}\n`+
-      `B) ${q.nom} ${q.prenom}\n\n`+
+      `Un autre patient porte déjà ce nom :\n\n` +
+      `A) ${p.nom} ${p.prenom}\n` +
+      `B) ${q.nom} ${q.prenom}\n\n` +
       `Souhaites-tu FUSIONNER leurs séances et conserver un seul patient ?`
     );
-
     if (ok) {
-      p.presences = mergeUniqueDates(p.presences, q.presences);
-      p.bilans = mergeUniqueDates(p.bilans, q.bilans);
+      // fusion des dates (présences, bilans, renfo)
+      p.presences      = mergeUniqueDates(p.presences,      q.presences);
+      p.bilans         = mergeUniqueDates(p.bilans,         q.bilans);
       p.renfoPresences = mergeUniqueDates(p.renfoPresences, q.renfoPresences);
 
+      // champs simples
       if (!p.phone && q.phone) p.phone = q.phone;
       if (!p.rejet && q.rejet) p.rejet = q.rejet;
       if (!p.notes && q.notes) p.notes = q.notes;
 
-      if (q.lastFactureDate && (!p.lastFactureDate || compareDates(q.lastFactureDate, p.lastFactureDate) > 0)) {
+      // Image : si le patient gardé n’a pas d’image mais l’autre en a une -> on récupère
+      if (!p.infoImage && q.infoImage) p.infoImage = q.infoImage;
+
+      // Date de dernière facturation : on garde la plus récente
+      if (
+        q.lastFactureDate &&
+        (!p.lastFactureDate ||
+          compareFactureDate(q.lastFactureDate, p.lastFactureDate) > 0)
+      ) {
         p.lastFactureDate = q.lastFactureDate;
       }
 
+      // Fusion rejets structurés
+      const cN = p.rejetCount || 0;
+      const dN = q.rejetCount || 0;
+      p.rejetCount = cN + dN;
+      p.rejetMutuelle = !!(p.rejetMutuelle || q.rejetMutuelle);
+      p.rejetSecu     = !!(p.rejetSecu || q.rejetSecu);
+
+      const cPer = (p.rejetPeriod || "").trim();
+      const dPer = (q.rejetPeriod || "").trim();
+      if (!cPer) {
+        p.rejetPeriod = dPer;
+      } else if (dPer && dPer !== cPer) {
+        p.rejetPeriod = (cPer > dPer) ? cPer : dPer;
+      }
+
+      if (p.rejetCount > 0) {
+        p.rejet = makeRejetText(p.rejetCount, p.rejetMutuelle, p.rejetSecu);
+      }
+
+      // on supprime le doublon
       patients.splice(dupIndex, 1);
       selectedPatientIndex = patients.indexOf(p);
     }
   }
 
-  // ✅ Mise à jour des clés externes si changement de nom/prénom
-  const newKey = keyName(p.nom, p.prenom);
-  if (oldKey !== newKey) {
-    // 1) Liste spéciale
-    const sk = getSpecialKeys();
-    const replaced = sk.map(k => k === oldKey ? newKey : k);
-    setSpecialKeys(Array.from(new Set(replaced)));
-
-    // 2) billedToday (pour ne pas perdre le 💰 du jour si on renomme)
-    const bt = getBilledTodayMap();
-    if (bt[oldKey] && !bt[newKey]) {
-      bt[newKey] = bt[oldKey];
-      delete bt[oldKey];
-      localStorage.setItem("billedToday", JSON.stringify(bt));
-    }
-  }
-
-  patients[selectedPatientIndex] = p;
+  patients[idx] = p;
   localStorage.setItem("patients", JSON.stringify(patients));
 
   showMainScreen();
+  renderPatients(searchInput.value);
+  updateMainTotals();
+  updatePinButton();
+  safeRefreshCalendar();
 }
 
 
@@ -3394,7 +3527,8 @@ tarifSeance: 18.2,
         rejetCount: 0,
         rejetMutuelle: false,
         rejetSecu: false,
-        rejetPeriod: ""
+        rejetPeriod: "",
+        infoImage: null
       });
 
     } else {
@@ -3930,7 +4064,9 @@ tarifSeance: 18.2,
         rejetSecu: false,
 
         // ✅ période du rejet
-        rejetPeriod: ""
+        rejetPeriod: "",
+
+        infoImage: null
       });
     }
   });
@@ -4162,7 +4298,8 @@ function importSpecialWhatsappChecked(){
           rejetCount: 0,
           rejetMutuelle: false,
           rejetSecu: false,
-          rejetPeriod: ""
+          rejetPeriod: "",
+          infoImage: null
         });
         idxNew = patients.length - 1;
         changed = true;
@@ -4487,34 +4624,39 @@ function renderMergeList(query){
   doMergePatients(srcIdx, dstIdx, keepA ? "A" : "B");
 }
 
-function doMergePatients(idxA, idxB, keep = "A"){
+function doMergePatients(idxA, idxB, keep = "A") {
   let patients = JSON.parse(localStorage.getItem("patients") || "[]");
-  if (idxA === idxB) return;
+  if (!patients[idxA] || !patients[idxB]) return;
 
-  const A = patients[idxA];
-  const B = patients[idxB];
+  let cIdx, dIdx; // c = conservé, d = supprimé
+  if (keep === "B") {
+    cIdx = idxB;
+    dIdx = idxA;
+  } else {
+    cIdx = idxA;
+    dIdx = idxB;
+  }
 
-  // Déterminer le "cible" (C) et le "absorbé" (D)
-  let C, D, cIdx, dIdx;
-  if (keep === "A"){ C = A; D = B; cIdx = idxA; dIdx = idxB; }
-  else             { C = B; D = A; cIdx = idxB; dIdx = idxA; }
+  const C = { ...patients[cIdx] };
+  const D = { ...patients[dIdx] };
 
- // Fusion des présences (unique)
-const setPres = new Set([...(C.presences||[]), ...(D.presences||[])]);
-C.presences = Array.from(setPres);
+  // Si on garde B, on copie nom/prénom de B sur C (sécurité)
+  if (keep === "B") {
+    C.nom = D.nom;
+    C.prenom = D.prenom;
+  }
 
-// AJOUT : fusion des bilans (unique)
-const setBil = new Set([...(C.bilans||[]), ...(D.bilans||[])]);
-C.bilans = Array.from(setBil);
-
-  // ✅ AJOUT : fusion des renfoPresences (unique)
-const setRenfo = new Set([...(C.renfoPresences||[]), ...(D.renfoPresences||[])]);
-C.renfoPresences = Array.from(setRenfo);
-
+  // fusion des dates
+  C.presences      = mergeUniqueDates(C.presences,      D.presences);
+  C.bilans         = mergeUniqueDates(C.bilans,         D.bilans);
+  C.renfoPresences = mergeUniqueDates(C.renfoPresences, D.renfoPresences);
 
   // lastFactureDate = plus récente
-  if (D.lastFactureDate){
-    if (!C.lastFactureDate || compareDates(D.lastFactureDate, C.lastFactureDate) > 0){
+  if (D.lastFactureDate) {
+    if (
+      !C.lastFactureDate ||
+      compareFactureDate(D.lastFactureDate, C.lastFactureDate) > 0
+    ) {
       C.lastFactureDate = D.lastFactureDate;
     }
   }
@@ -4522,57 +4664,55 @@ C.renfoPresences = Array.from(setRenfo);
   // phone / rejet / notes : si vide côté C, prends D (sinon concat notes)
   if ((!C.phone || !C.phone.trim()) && D.phone) C.phone = D.phone;
   if ((!C.rejet || !C.rejet.trim()) && D.rejet) C.rejet = D.rejet;
-  if (D.notes && D.notes.trim()){
+  if (D.notes && D.notes.trim()) {
     if (!C.notes || !C.notes.trim()) C.notes = D.notes;
-    else if (C.notes.trim() !== D.notes.trim()) C.notes = `${C.notes} | ${D.notes}`;
+    else if (C.notes.trim() !== D.notes.trim()) {
+      C.notes = `${C.notes} | ${D.notes}`;
+    }
   }
 
   // Ordonnances : OR logique pour les flags, détails si vide
   C.ordNonScan = !!(C.ordNonScan || D.ordNonScan);
-  C.ordRenouv  = !!(C.ordRenouv  || D.ordRenouv );
-  if ((!C.ordDetails || !C.ordDetails.trim()) && D.ordDetails) C.ordDetails = D.ordDetails;
+  C.ordRenouv  = !!(C.ordRenouv  || D.ordRenouv);
+  if ((!C.ordDetails || !C.ordDetails.trim()) && D.ordDetails) {
+    C.ordDetails = D.ordDetails;
+  }
 
-    // ✅ NOUVEAU : fusion rejets
+  // Image : si le patient conservé n'a pas d'image mais l'autre en a une
+  if (!C.infoImage && D.infoImage) {
+    C.infoImage = D.infoImage;
+  }
+
+  // NOUVEAU : fusion rejets ✅
   const cN = C.rejetCount || 0;
   const dN = D.rejetCount || 0;
-
-  // on additionne les séances rejetées
   C.rejetCount = cN + dN;
-
-  // si l’un a la mutuelle ou la sécu rejetée, on garde vrai
   C.rejetMutuelle = !!(C.rejetMutuelle || D.rejetMutuelle);
   C.rejetSecu     = !!(C.rejetSecu     || D.rejetSecu);
 
-    // ✅ NOUVEAU : fusion des périodes de rejet
+  // périodes de rejet : on garde la plus récente (YYYY-MM)
   const cPer = (C.rejetPeriod || "").trim();
   const dPer = (D.rejetPeriod || "").trim();
-
   if (!cPer) {
     C.rejetPeriod = dPer;
   } else if (dPer && dPer !== cPer) {
-    // si périodes différentes, on garde la plus récente (format YYYY-MM)
     C.rejetPeriod = (cPer > dPer) ? cPer : dPer;
   }
 
-
-  // met à jour le texte old-school "rejet"
+  // mise à jour du texte "rejet"
   if (C.rejetCount > 0) {
     C.rejet = makeRejetText(C.rejetCount, C.rejetMutuelle, C.rejetSecu);
   }
 
-
-  // Éventuellement, si keep == "B", on copie le nom/prénom de B sur C (déjà fait car C=B dans ce cas)
-  // Supprimer D
+  // suppression du doublon D
   patients.splice(dIdx, 1);
-
-  // Réécrire C
   patients[cIdx > dIdx ? cIdx - 1 : cIdx] = C;
-
   localStorage.setItem("patients", JSON.stringify(patients));
 
   closeMergeModal();
+
   // si la fiche absorbée était dans la liste spéciale, nettoyer
-const cKey = keyName(C.nom, C.prenom);
+  const cKey = keyName(C.nom, C.prenom);
   const dKey = keyName(D.nom, D.prenom);
   const keys = getSpecialKeys().filter(k => k !== dKey || k === cKey);
   setSpecialKeys(keys);
@@ -4581,7 +4721,9 @@ const cKey = keyName(C.nom, C.prenom);
   showMainScreen();
   updatePinButton();
   updateMainTotals();
+  safeRefreshCalendar();
 }
+
 
 // =========================
 
